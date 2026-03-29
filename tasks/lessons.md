@@ -1,0 +1,1 @@
+- Always run tsc --noEmit after writing types to catch shape mismatches early
