@@ -125,6 +125,34 @@ export interface ApiError {
   isRateLimit: boolean;
 }
 
+// ─── Network / Toast ─────────────────────────────────────────────────────────
+
+/** A single UI notification produced by API lifecycle events. */
+export interface Toast {
+  id: number;
+  /** Distinguishes rate-limit warnings from connectivity errors. */
+  type: "rate-limit" | "network-error" | "info";
+  message: string;
+  /**
+   * Optional expiry: `Date.now() + ttl_ms`. Used by the overlay to
+   * auto-dismiss rate-limit toasts once the backoff window has elapsed.
+   */
+  expiresAt?: number;
+}
+
+/** Shape exposed by `useNetworkStatus()` and the NetworkStatusContext. */
+export interface NetworkStatusContextValue {
+  /** Active notifications, newest last. Capped at 5 entries. */
+  toasts: Toast[];
+  /** Remove a specific toast by id. */
+  dismissToast: (id: number) => void;
+  /**
+   * True while consecutive network errors are being received.
+   * Cleared automatically when the next successful API response arrives.
+   */
+  connectionLost: boolean;
+}
+
 // ─── Component Props ─────────────────────────────────────────────────────────
 
 /** Props for the DriverDot SVG marker. All coordinates must be pre-normalised. */

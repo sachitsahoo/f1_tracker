@@ -9,6 +9,7 @@ import { useStints } from "./hooks/useStints";
 import StatusBar from "./components/StatusBar";
 import TrackMap from "./components/TrackMap";
 import Leaderboard from "./components/Leaderboard";
+import NetworkStatusOverlay from "./components/NetworkStatusOverlay";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -151,6 +152,9 @@ export default function App() {
           </span>
         </div>
       )}
+
+      {/* ── Network status: connection-lost banner + toast stack ─────────── */}
+      <NetworkStatusOverlay />
 
       {/* ── Status bar: full-width top strip ──────────────────────────────── */}
       <StatusBar

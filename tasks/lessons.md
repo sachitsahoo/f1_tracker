@@ -3,3 +3,4 @@
 - Compute bounds once on circuit load, then reuse for all driver dot normalisation
 - CSS transition on DriverDot SVG circles gives smooth movement between 1s polling updates
 - Leaderboard must handle missing interval/stint data gracefully — gaps appear mid-race only
+- Pass circuitKey from session.circuit_key — do not hardcode it
