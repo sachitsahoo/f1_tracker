@@ -56,4 +56,4 @@ $LESSONS_CONTENT"
 
 PROMPT="${1:-read the context and tell me the best next task}"
 
-claude --dangerously-skip-permissions --system-prompt "$CONTEXT" -p "$PROMPT"
+claude --dangerously-skip-permissions --system-prompt "$CONTEXT"
