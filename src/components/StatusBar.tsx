@@ -2,6 +2,7 @@ import React from "react";
 
 import type { RaceControl, StatusBarProps } from "../types/f1";
 import { useRaceControl } from "../hooks/useRaceControl";
+import SessionPicker from "./SessionPicker";
 
 // ─── Track-status colour palette ─────────────────────────────────────────────
 // Matches real F1 broadcast conventions: yellow for SC/VSC, red for red flag,
@@ -84,11 +85,14 @@ export default function StatusBar({
   currentLap,
   totalLaps,
   isLive,
+  sessions,
+  onSessionChange,
 }: StatusBarProps) {
   // ── Race control polling (10 s) ─────────────────────────────────────────
   // Pauses automatically when session is null (off-season / initial load).
   const { messages, loading: rcLoading } = useRaceControl(
     session?.session_key ?? null,
+    isLive,
   );
 
   // Most recent message (messages are appended chronologically)
@@ -133,9 +137,17 @@ export default function StatusBar({
 
       {/* ── Session info ──────────────────────────────────────────────────── */}
       <div style={styles.sessionBlock}>
-        <span style={styles.sessionTitle} aria-label="Session name">
-          {sessionTitle}
-        </span>
+        {sessions && sessions.length > 0 && onSessionChange ? (
+          <SessionPicker
+            sessions={sessions}
+            selectedKey={session?.session_key ?? null}
+            onSelect={onSessionChange}
+          />
+        ) : (
+          <span style={styles.sessionTitle} aria-label="Session name">
+            {sessionTitle}
+          </span>
+        )}
         {lapText && (
           <span style={styles.lapCounter} aria-label="Lap progress">
             {lapText}

@@ -218,6 +218,20 @@ export interface StatusBarProps {
    * False for historical/replay data. When session is null, treat as off-season.
    */
   isLive: boolean;
+  /** When provided, a SessionPicker dropdown replaces the plain session title text. */
+  sessions?: Session[];
+  /** Required when sessions is provided. */
+  onSessionChange?: (session: Session) => void;
+}
+
+/** Props for the SessionPicker dropdown component. */
+export interface SessionPickerProps {
+  /** All available sessions, newest first. */
+  sessions: Session[];
+  /** The session_key of the currently selected session, or null while loading. */
+  selectedKey: number | null;
+  /** Called when the user picks a different session. */
+  onSelect: (session: Session) => void;
 }
 
 /** Props for the TrackMap composite component. */

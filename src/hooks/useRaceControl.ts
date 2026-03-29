@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 import { getRaceControl } from "../api/openf1";
 import type { RaceControl, ApiError } from "../types/f1";
@@ -29,8 +29,13 @@ export interface UseRaceControlResult {
  * Uses a `date_gt` cursor so each poll only fetches new messages — never
  * re-downloads the full history on every tick.
  */
+/**
+ * Polls `/v1/race_control` every 10 s for the given session.
+ * When `isLive` is false, fires one initial fetch then stops.
+ */
 export function useRaceControl(
   sessionKey: number | null,
+  isLive = true,
 ): UseRaceControlResult {
   const [messages, setMessages] = useState<RaceControl[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -78,7 +83,14 @@ export function useRaceControl(
     cursorRef.current = undefined;
   }
 
-  useInterval(poll, sessionKey !== null ? POLL_INTERVAL_MS : null);
+  // Initial fetch — fires immediately so historical sessions load race control data.
+  useEffect(() => {
+    if (sessionKey === null) return;
+    void poll();
+  }, [sessionKey, poll]);
+
+  // Ongoing polling — only while the session is live.
+  useInterval(poll, isLive && sessionKey !== null ? POLL_INTERVAL_MS : null);
 
   return { messages, loading, error };
 }

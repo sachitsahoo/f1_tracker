@@ -1,10 +1,10 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 
-import type { Position, Stint } from "./types/f1";
-import { useSession } from "./hooks/useSession";
+import type { Position, Session, Stint } from "./types/f1";
+import { useSessions } from "./hooks/useSessions";
 import { useDrivers } from "./hooks/useDrivers";
 import { usePositions } from "./hooks/usePositions";
-import { useLocations } from "./hooks/useLocations";
+import { useLocationStream } from "./hooks/useLocationStream";
 import { useStints } from "./hooks/useStints";
 import StatusBar from "./components/StatusBar";
 import TrackMap from "./components/TrackMap";
@@ -35,23 +35,38 @@ export default function App() {
   // Fetches once on mount; resolves to the most recent Race session for the
   // current calendar year (or the last one if we are between race weekends).
   const {
-    session,
+    sessions,
+    defaultSession,
     loading: sessionLoading,
     error: sessionError,
-  } = useSession();
+  } = useSessions();
 
+  const [selectedSession, setSelectedSession] = useState<Session | null>(null);
+
+  // Set the default session once it resolves (only if user hasn't picked one yet)
+  useEffect(() => {
+    if (selectedSession === null && defaultSession !== null) {
+      setSelectedSession(defaultSession);
+    }
+  }, [defaultSession, selectedSession]);
+
+  const session = selectedSession;
   const sessionKey = session?.session_key ?? null;
+
+  // isLive must be derived before the data hooks so they can use it to decide
+  // whether to keep polling (live) or stop after the initial fetch (historical).
+  const isLive = deriveIsLive(session);
 
   // ── 2. Data hooks (all pause when sessionKey is null) ──────────────────────
   const { drivers } = useDrivers(sessionKey);
-  const { positions: positionsMap, intervals } = usePositions(sessionKey);
-  const { locations } = useLocations(sessionKey);
-  const { stints: stintsArray } = useStints(sessionKey);
+  const { positions: positionsMap, intervals } = usePositions(
+    sessionKey,
+    isLive,
+  );
+  const { locations } = useLocationStream(sessionKey, isLive);
+  const { stints: stintsArray } = useStints(sessionKey, isLive);
 
   // ── 3. Derived values ──────────────────────────────────────────────────────
-
-  // isLive: current wall-clock time is inside the session window
-  const isLive = deriveIsLive(session);
 
   // Position[] sorted ascending (P1 first) — Leaderboard expects an array
   const sortedPositions: Position[] = useMemo(
@@ -162,6 +177,8 @@ export default function App() {
         currentLap={null}
         totalLaps={null}
         isLive={isLive}
+        sessions={sessions}
+        onSessionChange={setSelectedSession}
       />
 
       {/* ── Two-panel body ─────────────────────────────────────────────────── */}

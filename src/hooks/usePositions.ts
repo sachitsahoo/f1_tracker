@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { getPositions, getIntervals } from "../api/openf1";
 import type { Position, Interval, ApiError } from "../types/f1";
 import { useInterval } from "./useInterval";
@@ -6,46 +6,45 @@ import { useInterval } from "./useInterval";
 const POLL_INTERVAL_MS = 4_000;
 
 export interface UsePositionsResult {
-  /**
-   * Latest known position per driver, keyed by driver_number.
-   * Updated incrementally via date_gt filtering.
-   */
   positions: Record<number, Position>;
-  /**
-   * Latest known gap/interval per driver, keyed by driver_number.
-   * Updated incrementally via date_gt filtering.
-   */
   intervals: Record<number, Interval>;
   loading: boolean;
   error: ApiError | null;
 }
 
 /**
- * Polls /v1/position and /v1/intervals together every 4 seconds.
- * Uses a `date_gt` cursor so only new records are fetched on each tick.
- * Merges incremental updates into a per-driver record map, always keeping
- * the most recent entry for each driver_number.
+ * Fetches /v1/position and /v1/intervals for the given session.
  *
- * Pass `null` for sessionKey while the session is still resolving —
- * the interval is paused automatically until a valid key is provided.
+ * When `isLive` is true (default): polls every 4 s via useInterval.
+ * When `isLive` is false (historical session): fires one immediate fetch
+ * to load existing data, then stops — no point hammering a finished race.
  */
-export function usePositions(sessionKey: number | null): UsePositionsResult {
+export function usePositions(
+  sessionKey: number | null,
+  isLive = true,
+): UsePositionsResult {
   const [positions, setPositions] = useState<Record<number, Position>>({});
   const [intervals, setIntervals] = useState<Record<number, Interval>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
 
-  // Cursor refs: track the latest date seen to filter subsequent polls
   const positionCursorRef = useRef<string | undefined>(undefined);
   const intervalCursorRef = useRef<string | undefined>(undefined);
+  const initialFetchDoneRef = useRef(false);
+
+  // Reset everything when the session changes
+  useEffect(() => {
+    positionCursorRef.current = undefined;
+    intervalCursorRef.current = undefined;
+    initialFetchDoneRef.current = false;
+    setPositions({});
+    setIntervals({});
+  }, [sessionKey]);
 
   const poll = useCallback(async (): Promise<void> => {
     if (sessionKey === null) return;
 
-    // Only show loading spinner on the very first fetch
-    if (positionCursorRef.current === undefined) {
-      setLoading(true);
-    }
+    if (positionCursorRef.current === undefined) setLoading(true);
     setError(null);
 
     try {
@@ -54,9 +53,7 @@ export function usePositions(sessionKey: number | null): UsePositionsResult {
         getIntervals(sessionKey, intervalCursorRef.current),
       ]);
 
-      // ── Merge positions ──────────────────────────────────────────────────
       if (newPositions.length > 0) {
-        // Advance cursor to the latest date in this batch
         const latestDate = newPositions.reduce(
           (max, p) => (p.date > max ? p.date : max),
           newPositions[0].date,
@@ -67,16 +64,12 @@ export function usePositions(sessionKey: number | null): UsePositionsResult {
           const next = { ...prev };
           for (const p of newPositions) {
             const existing = next[p.driver_number];
-            // Keep whichever record is more recent
-            if (!existing || p.date >= existing.date) {
-              next[p.driver_number] = p;
-            }
+            if (!existing || p.date >= existing.date) next[p.driver_number] = p;
           }
           return next;
         });
       }
 
-      // ── Merge intervals ──────────────────────────────────────────────────
       if (newIntervals.length > 0) {
         const latestDate = newIntervals.reduce(
           (max, i) => (i.date > max ? i.date : max),
@@ -88,9 +81,7 @@ export function usePositions(sessionKey: number | null): UsePositionsResult {
           const next = { ...prev };
           for (const i of newIntervals) {
             const existing = next[i.driver_number];
-            if (!existing || i.date >= existing.date) {
-              next[i.driver_number] = i;
-            }
+            if (!existing || i.date >= existing.date) next[i.driver_number] = i;
           }
           return next;
         });
@@ -102,8 +93,16 @@ export function usePositions(sessionKey: number | null): UsePositionsResult {
     }
   }, [sessionKey]);
 
-  // Pause the interval (delay = null) until sessionKey is available
-  useInterval(poll, sessionKey !== null ? POLL_INTERVAL_MS : null);
+  // Initial fetch — fires immediately regardless of isLive so historical
+  // sessions still load their data before the interval would otherwise kick in.
+  useEffect(() => {
+    if (sessionKey === null || initialFetchDoneRef.current) return;
+    initialFetchDoneRef.current = true;
+    void poll();
+  }, [sessionKey, poll]);
+
+  // Ongoing polling — only while the session is live.
+  useInterval(poll, isLive && sessionKey !== null ? POLL_INTERVAL_MS : null);
 
   return { positions, intervals, loading, error };
 }

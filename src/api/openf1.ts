@@ -11,7 +11,10 @@ import type {
 } from "../types/f1.ts";
 import { emitApiEvent } from "../utils/apiEvents";
 
-const BASE_URL = "https://api.openf1.org/v1";
+// In dev the Vite proxy rewrites /api/openf1/* → https://api.openf1.org/v1/*
+// and injects the Authorization header server-side (no CORS preflight).
+// In production point this at your own backend proxy.
+const BASE_URL = "/api/openf1";
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
@@ -53,7 +56,7 @@ async function fetchWithRetry(url: string): Promise<Response> {
   if (res.status === 429) {
     emitApiEvent(
       "rate-limit",
-      "Rate limited by OpenF1 (free tier: 30 req/min) — backing off 60 s then retrying…",
+      "Rate limited by OpenF1 — backing off 60 s then retrying…",
     );
     await sleep(60_000);
 
@@ -82,8 +85,22 @@ async function fetchWithRetry(url: string): Promise<Response> {
  *
  * Emits a `success` event on a valid 2xx response so that
  * NetworkStatusContext can clear any active "Connection lost" indicator.
+ *
+ * @param emptyOn404 - When true, a 404 is treated as an empty result ([])
+ *   rather than an error.  Use this for all polling endpoints where OpenF1
+ *   returns 404 to mean "no data for this query" (e.g. no positions yet,
+ *   session not yet live) rather than a genuine URL error.
  */
-async function handleResponse<T>(res: Response): Promise<T> {
+async function handleResponse<T>(
+  res: Response,
+  emptyOn404 = false,
+): Promise<T> {
+  // 404 on polling endpoints = "no data yet" — return empty array silently.
+  if (emptyOn404 && res.status === 404) {
+    emitApiEvent("success", "");
+    return [] as unknown as T;
+  }
+
   if (!res.ok) {
     const message = await res.text().catch(() => res.statusText);
     const error: ApiError = {
@@ -110,12 +127,15 @@ export async function getLatestSession(): Promise<Session> {
   const res = await fetchWithRetry(`${BASE_URL}/sessions?year=${year}`);
   const sessions = await handleResponse<Session[]>(res);
 
-  const sorted = [...sessions].sort(
-    (a, b) =>
-      new Date(b.date_start).getTime() - new Date(a.date_start).getTime(),
-  );
+  const now = new Date();
+  const sorted = [...sessions]
+    .filter((s) => new Date(s.date_start) <= now)
+    .sort(
+      (a, b) =>
+        new Date(a.date_start).getTime() - new Date(b.date_start).getTime(),
+    );
 
-  const latest = sorted[0];
+  const latest = sorted.at(-1);
   if (!latest) {
     const error: ApiError = {
       status: 404,
@@ -125,6 +145,25 @@ export async function getLatestSession(): Promise<Session> {
     throw error;
   }
   return latest;
+}
+
+/**
+ * Returns all Race-type sessions for `year` that have already started,
+ * sorted ascending by date_start (oldest first).
+ * Used by useSessions to populate the session picker.
+ */
+export async function getRaceSessions(year: number): Promise<Session[]> {
+  const res = await fetchWithRetry(
+    `${BASE_URL}/sessions?year=${year}&session_type=Race`,
+  );
+  const sessions = await handleResponse<Session[]>(res, true);
+  const now = new Date();
+  return sessions
+    .filter((s) => new Date(s.date_start) <= now)
+    .sort(
+      (a, b) =>
+        new Date(a.date_start).getTime() - new Date(b.date_start).getTime(),
+    );
 }
 
 // ─── Drivers ──────────────────────────────────────────────────────────────────
@@ -155,7 +194,7 @@ export async function getPositions(
   const params = new URLSearchParams({ session_key: String(sessionKey) });
   if (dateGt !== undefined) params.set("date_gt", dateGt);
   const res = await fetchWithRetry(`${BASE_URL}/position?${params.toString()}`);
-  return handleResponse<Position[]>(res);
+  return handleResponse<Position[]>(res, true);
 }
 
 // ─── Locations (telemetry X/Y/Z) ─────────────────────────────────────────────
@@ -172,7 +211,7 @@ export async function getLocations(
   const params = new URLSearchParams({ session_key: String(sessionKey) });
   if (dateGt !== undefined) params.set("date_gt", dateGt);
   const res = await fetchWithRetry(`${BASE_URL}/location?${params.toString()}`);
-  return handleResponse<Location[]>(res);
+  return handleResponse<Location[]>(res, true);
 }
 
 // ─── Intervals (gaps) ─────────────────────────────────────────────────────────
@@ -190,7 +229,7 @@ export async function getIntervals(
   const res = await fetchWithRetry(
     `${BASE_URL}/intervals?${params.toString()}`,
   );
-  return handleResponse<Interval[]>(res);
+  return handleResponse<Interval[]>(res, true);
 }
 
 // ─── Stints (tires) ───────────────────────────────────────────────────────────
@@ -205,7 +244,7 @@ export async function getStints(
   const res = await fetchWithRetry(
     `${BASE_URL}/stints?session_key=${sessionKey}`,
   );
-  return handleResponse<Stint[]>(res);
+  return handleResponse<Stint[]>(res, true);
 }
 
 // ─── Race Control ─────────────────────────────────────────────────────────────
@@ -223,7 +262,7 @@ export async function getRaceControl(
   const res = await fetchWithRetry(
     `${BASE_URL}/race_control?${params.toString()}`,
   );
-  return handleResponse<RaceControl[]>(res);
+  return handleResponse<RaceControl[]>(res, true);
 }
 
 // ─── Laps ─────────────────────────────────────────────────────────────────────
@@ -239,5 +278,5 @@ export async function getLaps(
   const params = new URLSearchParams({ session_key: String(sessionKey) });
   if (dateGt !== undefined) params.set("date_gt", dateGt);
   const res = await fetchWithRetry(`${BASE_URL}/laps?${params.toString()}`);
-  return handleResponse<Lap[]>(res);
+  return handleResponse<Lap[]>(res, true);
 }

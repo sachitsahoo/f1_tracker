@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import type { Session, ApiError } from "../types/f1";
 
-const BASE_URL = "https://api.openf1.org/v1";
+const BASE_URL = "/api/openf1";
 
 export interface UseSessionResult {
   session: Session | null;
@@ -44,11 +44,19 @@ export function useSession(): UseSessionResult {
 
         const sessions: Session[] = await res.json();
 
-        // Pick the session with the latest start date
-        const latest = sessions.reduce<Session | null>((best, s) => {
-          if (!best) return s;
-          return new Date(s.date_start) > new Date(best.date_start) ? s : best;
-        }, null);
+        // Only consider sessions that have already started — future sessions
+        // (e.g. scheduled rounds later in the calendar) must be excluded so we
+        // don't end up polling for data that doesn't exist yet.
+        const now = new Date();
+        const started = sessions
+          .filter((s) => new Date(s.date_start) <= now)
+          .sort(
+            (a, b) =>
+              new Date(a.date_start).getTime() -
+              new Date(b.date_start).getTime(),
+          );
+
+        const latest = started.at(-1) ?? null;
 
         if (!latest) {
           throw {
