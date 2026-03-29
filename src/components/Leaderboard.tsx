@@ -9,6 +9,171 @@ import type {
 } from "../types/f1";
 import { getTeamColor } from "../utils/teamColors";
 
+// ─── Loading skeleton ─────────────────────────────────────────────────────────
+
+/**
+ * Shown while the first batch of position + driver data is still loading.
+ * 20 shimmer rows — one per potential grid slot.
+ */
+function LeaderboardSkeleton() {
+  const shimmerStyle: React.CSSProperties = {
+    background: "linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%)",
+    backgroundSize: "800px 100%",
+    animation: "f1-shimmer 1.6s linear infinite",
+    borderRadius: "3px",
+  };
+
+  return (
+    <div
+      style={skeletonStyles.container}
+      aria-busy="true"
+      aria-label="Loading race standings"
+    >
+      {/* Header mirrors real header */}
+      <div style={skeletonStyles.header}>
+        <span style={skeletonStyles.headerTitle}>LEADERBOARD</span>
+        <div
+          style={{
+            ...shimmerStyle,
+            width: "80px",
+            height: "14px",
+            borderRadius: "3px",
+          }}
+        />
+      </div>
+
+      {/* Column header row */}
+      <div style={skeletonStyles.colRow}>
+        {["36px", "1fr", "80px", "68px", "80px"].map((w, i) => (
+          <div
+            key={i}
+            style={{
+              ...shimmerStyle,
+              width: typeof w === "string" && w.endsWith("fr") ? "60px" : w,
+              height: "10px",
+              flexShrink: 0,
+            }}
+          />
+        ))}
+      </div>
+
+      {/* 20 placeholder rows */}
+      {Array.from({ length: 20 }, (_, i) => (
+        <div key={i} style={skeletonStyles.row}>
+          {/* Position pill */}
+          <div
+            style={{
+              ...shimmerStyle,
+              width: "20px",
+              height: "16px",
+              flexShrink: 0,
+            }}
+          />
+          {/* Team swatch + name */}
+          <div style={{ ...skeletonStyles.driverCell }}>
+            <div
+              style={{
+                ...shimmerStyle,
+                width: "4px",
+                height: "20px",
+                flexShrink: 0,
+                borderRadius: "2px",
+              }}
+            />
+            <div
+              style={{
+                ...shimmerStyle,
+                width: `${48 + (i % 3) * 8}px`,
+                height: "14px",
+              }}
+            />
+          </div>
+          {/* Gap */}
+          <div
+            style={{
+              ...shimmerStyle,
+              width: "52px",
+              height: "12px",
+              marginLeft: "auto",
+              flexShrink: 0,
+            }}
+          />
+          {/* Tire badge */}
+          <div
+            style={{
+              ...shimmerStyle,
+              width: "18px",
+              height: "18px",
+              borderRadius: "50%",
+              flexShrink: 0,
+            }}
+          />
+          {/* Lap time */}
+          <div
+            style={{
+              ...shimmerStyle,
+              width: "64px",
+              height: "12px",
+              flexShrink: 0,
+            }}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const skeletonStyles: Record<string, React.CSSProperties> = {
+  container: {
+    fontFamily: "'Roboto Mono', 'Courier New', monospace",
+    fontSize: "12px",
+    backgroundColor: "#111111",
+    color: "#E0E0E0",
+    borderRadius: "8px",
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+    minWidth: "420px",
+  },
+  header: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "10px 16px",
+    backgroundColor: "#1A1A1A",
+    borderBottom: "2px solid #E8002D",
+  },
+  headerTitle: {
+    fontSize: "13px",
+    fontWeight: 700,
+    letterSpacing: "0.12em",
+    color: "#444444",
+    textTransform: "uppercase" as const,
+  },
+  colRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    padding: "5px 16px",
+    backgroundColor: "#181818",
+    borderBottom: "1px solid #2A2A2A",
+  },
+  row: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    padding: "9px 16px",
+    borderBottom: "1px solid #1A1A1A",
+  },
+  driverCell: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    flex: 1,
+    minWidth: 0,
+  },
+};
+
 // ─── Tire compound badge colours ─────────────────────────────────────────────
 // Distinct from team colours — standard F1 compound palette.
 
@@ -134,7 +299,9 @@ export default function Leaderboard({
       {/* ── Rows ───────────────────────────────────────────────────────────── */}
       <div style={styles.rows} role="list" aria-label="Race standings">
         {positions.length === 0 ? (
-          <div style={styles.empty}>No position data available</div>
+          // Show shimmer skeleton while awaiting first data from the API.
+          // Once positions arrive the skeleton is replaced by real rows.
+          <LeaderboardSkeleton />
         ) : (
           positions.map((pos) => {
             const driver = driverMap.get(pos.driver_number);

@@ -148,7 +148,7 @@ function TrackError({ message }: { message: string }) {
  * the circuit renders with the correct orientation. Driver telemetry from
  * OpenF1 shares the same coordinate space, so the same flip is applied there.
  */
-export function TrackMap({
+export default function TrackMap({
   circuitKey,
   year,
   drivers,
