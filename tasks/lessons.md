@@ -5,3 +5,4 @@
 - Leaderboard must handle missing interval/stint data gracefully — gaps appear mid-race only
 - Pass circuitKey from session.circuit_key — do not hardcode it
 - OpenF1 free tier: 3 req/s, 30 req/min. Back off on 429 — do not hammer the endpoint
+- Final build check: tsc --noEmit + npm run build must both pass before shipping
