@@ -13,6 +13,8 @@ React hooks that own polling logic and expose typed state to components. Each ho
 
 ## Rules
 
+- **Never hardcode `session_key` or driver numbers** — receive `sessionKey` from `useSession`, driver data from `useDrivers`; never pass integer literals
+- **All hook return types must use interfaces from `src/types/f1.ts`** — no `any`, no inline object shapes
 - Use a shared `useInterval` hook for all polling — always clean up on unmount
 - Pass `date_gt` of last received timestamp to each poll call to fetch only new data
 - Return `{ data, loading, error }` shape from every hook

@@ -201,6 +201,27 @@ npm run lint      # ESLint
 
 ---
 
+## PROJECT RULES
+
+These rules are enforced across the entire codebase. Any AI-generated or human-written code must comply.
+
+### Rule 1 — Never hardcode session keys or driver numbers
+`session_key` and driver numbers must **never** appear as literals in source code.
+Always derive them from API responses:
+- `session_key` → `/v1/sessions` (filter by `session_type` and most recent date)
+- Driver numbers → `/v1/drivers?session_key=<key>`
+
+### Rule 2 — TypeScript interfaces required for all API responses
+Every OpenF1 API response shape must have a TypeScript interface defined in `src/types/f1.ts` **before** it is used anywhere in the codebase. No `any`, no inline object shapes, no ad-hoc casting.
+
+### Rule 3 — Polling cleanup is mandatory
+Every `useInterval` or `setInterval` call must have a corresponding cleanup returned from `useEffect`. Intervals must never be left running after a component unmounts. Use the shared `useInterval` hook for all polling.
+
+### Rule 4 — SVG coordinate normalization is mandatory
+Raw OpenF1 X/Y telemetry values must **never** be rendered into SVG directly. All coordinates must be passed through `normalizeCoords()` in `src/utils/coordinates.ts` before use in any SVG element.
+
+---
+
 ## Notes for AI Assistance
 
 - All API calls should be typed with interfaces in `src/types/f1.ts`

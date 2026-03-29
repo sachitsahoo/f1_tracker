@@ -4,7 +4,7 @@ export interface Session {
   session_key: number;
   session_name: string;
   session_type: string; // 'Race' | 'Qualifying' | 'Practice 1' | etc.
-  date_start: string;   // ISO 8601
+  date_start: string; // ISO 8601
   date_end: string;
   circuit_key: number;
   circuit_short_name: string;
@@ -19,9 +19,9 @@ export interface Driver {
   driver_number: number;
   broadcast_name: string;
   full_name: string;
-  name_acronym: string;   // e.g. "VER"
-  team_name: string;      // e.g. "red_bull" (snake_case from API)
-  team_colour: string;    // hex without #, e.g. "3671C6"
+  name_acronym: string; // e.g. "VER"
+  team_name: string; // e.g. "red_bull" (snake_case from API)
+  team_colour: string; // hex without #, e.g. "3671C6"
   headshot_url: string | null;
   session_key: number;
 }
@@ -62,7 +62,7 @@ export interface Stint {
   driver_number: number;
   lap_start: number;
   lap_end: number | null;
-  compound: 'SOFT' | 'MEDIUM' | 'HARD' | 'INTERMEDIATE' | 'WET' | string;
+  compound: "SOFT" | "MEDIUM" | "HARD" | "INTERMEDIATE" | "WET" | string;
   tyre_age_at_start: number;
   session_key: number;
 }

@@ -12,6 +12,7 @@ Pure presentational and composite React components. Consume hooks; do not fetch 
 ## Rules
 
 - No `fetch` or `useInterval` calls inside components — consume hooks from `src/hooks/`
+- **All component props must be typed using interfaces from `src/types/f1.ts`** — no inline prop types, no `any`
 - Driver dot positions must use CSS `transition` for smooth movement between 1s updates
 - Use team colors from `src/utils/teamColors.ts` — never hardcode hex values here
 - Show a "REPLAY" badge in `StatusBar` when the session is not live (historical data)
