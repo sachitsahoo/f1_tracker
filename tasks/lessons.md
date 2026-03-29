@@ -1,1 +1,2 @@
 - Always run tsc --noEmit after writing types to catch shape mismatches early
+- useInterval hook centralises cleanup — all polling goes through it, never raw setInterval
