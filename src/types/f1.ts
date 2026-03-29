@@ -84,6 +84,39 @@ export interface CircuitData {
   marshalLights?: Array<{ trackPosition: { x: number; y: number } }>;
 }
 
+// ─── Race Control (flags, safety car, incidents) ─────────────────────────────
+
+export interface RaceControl {
+  date: string;
+  driver_number: number | null;
+  flag: string | null; // 'GREEN' | 'YELLOW' | 'RED' | 'SAFETY CAR' | 'VIRTUAL SAFETY CAR' | etc.
+  lap_number: number | null;
+  message: string;
+  scope: string | null; // 'Track' | 'Sector' | 'Driver'
+  sector: number | null;
+  session_key: number;
+}
+
+// ─── Laps ────────────────────────────────────────────────────────────────────
+
+export interface Lap {
+  date_start: string;
+  driver_number: number;
+  duration_sector_1: number | null;
+  duration_sector_2: number | null;
+  duration_sector_3: number | null;
+  i1_speed: number | null; // speed trap at intermediate 1 (km/h)
+  i2_speed: number | null; // speed trap at intermediate 2 (km/h)
+  is_pit_out_lap: boolean;
+  lap_duration: number | null; // total lap time in seconds
+  lap_number: number;
+  segments_sector_1: number[] | null; // mini-sector status codes
+  segments_sector_2: number[] | null;
+  segments_sector_3: number[] | null;
+  st_speed: number | null; // speed trap at finish straight (km/h)
+  session_key: number;
+}
+
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
 export interface ApiError {
