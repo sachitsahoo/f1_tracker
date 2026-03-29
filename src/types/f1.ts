@@ -124,3 +124,35 @@ export interface ApiError {
   message: string;
   isRateLimit: boolean;
 }
+
+// ─── Component Props ─────────────────────────────────────────────────────────
+
+/** Props for the DriverDot SVG marker. All coordinates must be pre-normalised. */
+export interface DriverDotProps {
+  /** Normalised SVG X coordinate — output of normalizeCoords(), never raw telemetry. */
+  svgX: number;
+  /** Normalised SVG Y coordinate — output of normalizeCoords(), never raw telemetry. */
+  svgY: number;
+  /** CSS hex color string (e.g. "#FF8000") for the dot and label. */
+  color: string;
+  /** Driver three-letter abbreviation, e.g. "VER". From Driver.name_acronym. */
+  abbreviation: string;
+  /** Driver number — used as React key by the parent. */
+  driverNumber: number;
+}
+
+/** Props for the TrackMap composite component. */
+export interface TrackMapProps {
+  /** OpenF1 circuit_key from the session — never hardcoded. */
+  circuitKey: number;
+  /** Season year — used to fetch the correct circuit layout revision. */
+  year: number;
+  /** Full driver roster for the session. Used to look up name/color per dot. */
+  drivers: Driver[];
+  /**
+   * Latest known telemetry location per driver, keyed by driver_number.
+   * Raw X/Y values — normalisation happens inside TrackMap, never outside.
+   * Comes directly from useLocations().locations.
+   */
+  locations: Record<number, Location>;
+}
