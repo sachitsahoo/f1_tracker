@@ -1,14 +1,18 @@
 import React, { useMemo, useState, useEffect } from "react";
 
-import type { Position, Session, Stint } from "./types/f1";
+import type { Position, Interval, Session, Stint, Lap } from "./types/f1";
 import { useSessions } from "./hooks/useSessions";
 import { useDrivers } from "./hooks/useDrivers";
 import { usePositions } from "./hooks/usePositions";
 import { useLocationStream } from "./hooks/useLocationStream";
+import { useLocationSnapshot } from "./hooks/useLocationSnapshot";
 import { useStints } from "./hooks/useStints";
+import { useLaps } from "./hooks/useLaps";
+import { useRaceControl } from "./hooks/useRaceControl";
 import StatusBar from "./components/StatusBar";
 import TrackMap from "./components/TrackMap";
 import Leaderboard from "./components/Leaderboard";
+import ReplayScrubber from "./components/ReplayScrubber";
 import NetworkStatusOverlay from "./components/NetworkStatusOverlay";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -25,6 +29,43 @@ function deriveIsLive(
   return (
     new Date(session.date_start).getTime() <= now &&
     now <= new Date(session.date_end).getTime()
+  );
+}
+
+/**
+ * Given all laps for a session and a target lap number, returns the ISO
+ * timestamp after which the race state represents "end of lap N".
+ *
+ * Strategy: find the last driver to start lap N, then add their lap duration.
+ * This ensures we capture position data for every driver finishing that lap.
+ */
+function lapCutoffDate(laps: Lap[], lapNumber: number): string | null {
+  const records = laps.filter((l) => l.lap_number === lapNumber);
+  if (records.length === 0) return null;
+
+  // Compare by milliseconds, not strings — string comparison breaks when
+  // timestamps have mixed timezone representations (e.g. +00:00 vs Z).
+  const latestStartMs = Math.max(
+    ...records.map((l) => new Date(l.date_start).getTime()),
+  );
+  const maxDuration = Math.max(...records.map((l) => l.lap_duration ?? 120));
+  return new Date(latestStartMs + maxDuration * 1000).toISOString();
+}
+
+/**
+ * Reduces a flat array of timestamped records to a map of the most recent
+ * record per driver_number. Used to derive leaderboard state at a point in time.
+ */
+function latestPerDriver<T extends { driver_number: number; date: string }>(
+  records: T[],
+): Record<number, T> {
+  return records.reduce(
+    (acc, r) => {
+      const existing = acc[r.driver_number];
+      if (!existing || r.date > existing.date) acc[r.driver_number] = r;
+      return acc;
+    },
+    {} as Record<number, T>,
   );
 }
 
@@ -59,34 +100,86 @@ export default function App() {
 
   // ── 2. Data hooks (all pause when sessionKey is null) ──────────────────────
   const { drivers } = useDrivers(sessionKey);
-  const { positions: positionsMap, intervals } = usePositions(
-    sessionKey,
-    isLive,
-  );
-  const { locations } = useLocationStream(sessionKey, isLive);
+  const {
+    positions: positionsMap,
+    intervals,
+    allPositions,
+    allIntervals,
+  } = usePositions(sessionKey, isLive);
+  const { locations: streamLocations } = useLocationStream(sessionKey, isLive);
   const { stints: stintsArray } = useStints(sessionKey, isLive);
+  const { laps, totalLaps } = useLaps(sessionKey);
+  const { messages } = useRaceControl(sessionKey, isLive);
 
-  // ── 3. Derived values ──────────────────────────────────────────────────────
+  // ── 3. Replay scrubber state ───────────────────────────────────────────────
+
+  const [replayLap, setReplayLap] = useState<number>(1);
+
+  // Whenever totalLaps resolves or the session changes, jump to the final lap
+  // so the default view shows the end-of-race standings.
+  useEffect(() => {
+    if (totalLaps != null) setReplayLap(totalLaps);
+  }, [sessionKey, totalLaps]);
+
+  // ── 4. Derived values ──────────────────────────────────────────────────────
+
+  // For replay mode: compute the ISO cutoff timestamp for the selected lap.
+  // null means "show everything" (used when live or scrubbed to the final lap).
+  const replayCutoff: string | null = useMemo(() => {
+    if (isLive || totalLaps == null) return null;
+    if (replayLap >= totalLaps) return null; // final lap → no filtering
+    return lapCutoffDate(laps, replayLap);
+  }, [isLive, laps, replayLap, totalLaps]);
+
+  // Location snapshot — fetches a 30-second window of X/Y data ending at
+  // replayCutoff. Debounced 250 ms so rapid slider drags don't hammer the API.
+  // Inactive when replayCutoff is null (live session or scrubber at final lap).
+  const { locations: snapshotLocations } = useLocationSnapshot(
+    sessionKey,
+    replayCutoff,
+  );
+
+  // Track-map locations: use snapshot when scrubbing, stream otherwise.
+  const displayLocations =
+    replayCutoff !== null ? snapshotLocations : streamLocations;
+
+  // Positions to display — filtered to the scrubber lap when in replay mode.
+  const displayPositionsMap: Record<number, Position> = useMemo(() => {
+    if (replayCutoff === null) return positionsMap;
+    return latestPerDriver(allPositions.filter((p) => p.date <= replayCutoff));
+  }, [replayCutoff, positionsMap, allPositions]);
+
+  // Intervals to display — same cutoff logic.
+  const displayIntervals: Record<number, Interval> = useMemo(() => {
+    if (replayCutoff === null) return intervals;
+    return latestPerDriver(allIntervals.filter((i) => i.date <= replayCutoff));
+  }, [replayCutoff, intervals, allIntervals]);
 
   // Position[] sorted ascending (P1 first) — Leaderboard expects an array
   const sortedPositions: Position[] = useMemo(
-    () => Object.values(positionsMap).sort((a, b) => a.position - b.position),
-    [positionsMap],
+    () =>
+      Object.values(displayPositionsMap).sort(
+        (a, b) => a.position - b.position,
+      ),
+    [displayPositionsMap],
   );
 
-  // Latest active stint per driver (Record<number, Stint>) for the Leaderboard.
-  // useStints returns the full history; we keep whichever stint has the highest
-  // lap_start (most recently started) for each driver.
+  // Stints filtered to those that had started by the selected replay lap,
+  // then reduced to the latest (highest lap_start) per driver.
   const stintMap: Record<number, Stint> = useMemo(() => {
+    const source =
+      !isLive && replayCutoff !== null
+        ? stintsArray.filter((s) => s.lap_start <= replayLap)
+        : stintsArray;
     const map: Record<number, Stint> = {};
-    for (const stint of stintsArray) {
+    for (const stint of source) {
       const existing = map[stint.driver_number];
       if (!existing || stint.lap_start > existing.lap_start) {
         map[stint.driver_number] = stint;
       }
     }
     return map;
-  }, [stintsArray]);
+  }, [stintsArray, isLive, replayCutoff, replayLap]);
 
   // ── 4. Loading / error screens ────────────────────────────────────────────
 
@@ -174,15 +267,22 @@ export default function App() {
       {/* ── Status bar: full-width top strip ──────────────────────────────── */}
       <StatusBar
         session={session}
-        currentLap={null}
-        totalLaps={null}
+        currentLap={!isLive ? replayLap : null}
+        totalLaps={totalLaps}
         isLive={isLive}
+        messages={messages}
         sessions={sessions}
         onSessionChange={setSelectedSession}
       />
 
       {/* ── Two-panel body ─────────────────────────────────────────────────── */}
-      <div style={styles.body}>
+      {/* Extra bottom padding when the scrubber is visible so content isn't hidden. */}
+      <div
+        style={{
+          ...styles.body,
+          paddingBottom: !isLive && totalLaps != null ? "56px" : 0,
+        }}
+      >
         {/* Left: SVG track map — ~60% of remaining width */}
         <div style={styles.mapPanel}>
           {session !== null ? (
@@ -190,7 +290,7 @@ export default function App() {
               circuitKey={session.circuit_key}
               year={session.year}
               drivers={drivers}
-              locations={locations}
+              locations={displayLocations}
             />
           ) : (
             /* Placeholder when there is genuinely no session to display */
@@ -211,15 +311,25 @@ export default function App() {
           <Leaderboard
             positions={sortedPositions}
             drivers={drivers}
-            intervals={intervals}
+            intervals={displayIntervals}
             stints={stintMap}
             laps={{}}
-            currentLap={null}
-            totalLaps={null}
+            currentLap={!isLive ? replayLap : null}
+            totalLaps={totalLaps}
             isLive={isLive}
           />
         </div>
       </div>
+
+      {/* ── Replay scrubber — fixed bottom bar, only for historical sessions ── */}
+      {!isLive && totalLaps != null && (
+        <ReplayScrubber
+          totalLaps={totalLaps}
+          replayLap={replayLap}
+          onChange={setReplayLap}
+          events={messages}
+        />
+      )}
     </div>
   );
 }

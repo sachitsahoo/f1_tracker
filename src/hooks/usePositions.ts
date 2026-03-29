@@ -8,6 +8,10 @@ const POLL_INTERVAL_MS = 4_000;
 export interface UsePositionsResult {
   positions: Record<number, Position>;
   intervals: Record<number, Interval>;
+  /** Full position history for the session. Only populated when isLive=false. */
+  allPositions: Position[];
+  /** Full interval history for the session. Only populated when isLive=false. */
+  allIntervals: Interval[];
   loading: boolean;
   error: ApiError | null;
 }
@@ -25,12 +29,17 @@ export function usePositions(
 ): UsePositionsResult {
   const [positions, setPositions] = useState<Record<number, Position>>({});
   const [intervals, setIntervals] = useState<Record<number, Interval>>({});
+  const [allPositions, setAllPositions] = useState<Position[]>([]);
+  const [allIntervals, setAllIntervals] = useState<Interval[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
 
   const positionCursorRef = useRef<string | undefined>(undefined);
   const intervalCursorRef = useRef<string | undefined>(undefined);
   const initialFetchDoneRef = useRef(false);
+  // Keep isLive accessible inside poll without re-creating the callback
+  const isLiveRef = useRef(isLive);
+  isLiveRef.current = isLive;
 
   // Reset everything when the session changes
   useEffect(() => {
@@ -39,6 +48,8 @@ export function usePositions(
     initialFetchDoneRef.current = false;
     setPositions({});
     setIntervals({});
+    setAllPositions([]);
+    setAllIntervals([]);
   }, [sessionKey]);
 
   const poll = useCallback(async (): Promise<void> => {
@@ -68,6 +79,12 @@ export function usePositions(
           }
           return next;
         });
+
+        // Accumulate full history only for replay (historical) sessions.
+        // Live sessions only need the latest-per-driver map.
+        if (!isLiveRef.current) {
+          setAllPositions((prev) => [...prev, ...newPositions]);
+        }
       }
 
       if (newIntervals.length > 0) {
@@ -85,6 +102,10 @@ export function usePositions(
           }
           return next;
         });
+
+        if (!isLiveRef.current) {
+          setAllIntervals((prev) => [...prev, ...newIntervals]);
+        }
       }
     } catch (err) {
       setError(err as ApiError);
@@ -104,5 +125,5 @@ export function usePositions(
   // Ongoing polling — only while the session is live.
   useInterval(poll, isLive && sessionKey !== null ? POLL_INTERVAL_MS : null);
 
-  return { positions, intervals, loading, error };
+  return { positions, intervals, allPositions, allIntervals, loading, error };
 }

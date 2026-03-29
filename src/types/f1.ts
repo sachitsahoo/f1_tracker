@@ -205,8 +205,7 @@ export interface LeaderboardProps {
 export interface StatusBarProps {
   /**
    * Current session, or null when no session has loaded yet / off-season.
-   * Provides session_key (used internally to poll race control) and
-   * session_name / circuit_short_name for display.
+   * Provides session_name / circuit_short_name for display.
    */
   session: Session | null;
   /** Current lap number in the race. Null when unknown or not yet started. */
@@ -218,10 +217,31 @@ export interface StatusBarProps {
    * False for historical/replay data. When session is null, treat as off-season.
    */
   isLive: boolean;
+  /**
+   * Race control messages for the session — passed down from App so the same
+   * data can also drive the ReplayScrubber event markers. App owns the
+   * useRaceControl call; StatusBar is purely presentational here.
+   */
+  messages: RaceControl[];
   /** When provided, a SessionPicker dropdown replaces the plain session title text. */
   sessions?: Session[];
   /** Required when sessions is provided. */
   onSessionChange?: (session: Session) => void;
+}
+
+/** Props for the lap-based replay scrubber bar. */
+export interface ReplayScrubberProps {
+  /** Total number of laps in the session. */
+  totalLaps: number;
+  /** Currently selected replay lap (1-indexed). */
+  replayLap: number;
+  /** Called when the user drags the slider to a new lap. */
+  onChange: (lap: number) => void;
+  /**
+   * All race control messages for the session.
+   * Used to render event markers (safety car, red flag) on the slider rail.
+   */
+  events: RaceControl[];
 }
 
 /** Props for the SessionPicker dropdown component. */

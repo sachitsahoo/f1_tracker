@@ -1,7 +1,6 @@
 import React from "react";
 
 import type { RaceControl, StatusBarProps } from "../types/f1";
-import { useRaceControl } from "../hooks/useRaceControl";
 import SessionPicker from "./SessionPicker";
 
 // ─── Track-status colour palette ─────────────────────────────────────────────
@@ -85,17 +84,11 @@ export default function StatusBar({
   currentLap,
   totalLaps,
   isLive,
+  messages,
   sessions,
   onSessionChange,
 }: StatusBarProps) {
-  // ── Race control polling (10 s) ─────────────────────────────────────────
-  // Pauses automatically when session is null (off-season / initial load).
-  const { messages, loading: rcLoading } = useRaceControl(
-    session?.session_key ?? null,
-    isLive,
-  );
-
-  // Most recent message (messages are appended chronologically)
+  // Most recent message (messages are appended chronologically by App)
   const latestMessage: RaceControl | null =
     messages.length > 0 ? (messages[messages.length - 1] ?? null) : null;
 
@@ -159,7 +152,7 @@ export default function StatusBar({
       <div style={styles.spacer} />
 
       {/* ── Race control message ──────────────────────────────────────────── */}
-      {latestMessage && !rcLoading && (
+      {latestMessage && (
         <div
           style={styles.rcBlock}
           aria-label="Latest race control message"

@@ -15,7 +15,20 @@ export default defineConfig(({ mode }) => {
         "/api/openf1": {
           target: "https://api.openf1.org",
           changeOrigin: true,
+          // Rewrite path only — query string (including date> / date< filters)
+          // is forwarded verbatim by http-proxy.
           rewrite: (path) => path.replace(/^\/api\/openf1/, "/v1"),
+          // Re-decode %3E → > and %3C → < in the outgoing URL so OpenF1
+          // receives the literal comparison operators it expects.
+          // This is a safety net; our fetch calls already send literal > / <
+          // via string concatenation, but proxies can re-encode them.
+          configure: (proxy) => {
+            proxy.on("proxyReq", (proxyReq) => {
+              const raw = proxyReq.path;
+              const fixed = raw.replace(/%3E/gi, ">").replace(/%3C/gi, "<");
+              if (fixed !== raw) proxyReq.path = fixed;
+            });
+          },
           ...(env.VITE_OPENF1_API_KEY
             ? {
                 headers: { Authorization: `Bearer ${env.VITE_OPENF1_API_KEY}` },

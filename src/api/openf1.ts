@@ -18,6 +18,28 @@ const BASE_URL = "/api/openf1";
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
+/**
+ * Normalises an ISO 8601 timestamp to UTC `Z` notation before it is used as a
+ * query-parameter value.
+ *
+ * OpenF1 returns timestamps like `2025-12-07T14:38:30.459000+00:00`.
+ * When that string is passed to `URLSearchParams.set()` the `+` is percent-
+ * encoded to `%2B`, producing `…%2B00:00`.  The OpenF1 API does not recognise
+ * that variant and silently returns 404 instead of data.
+ *
+ * Replacing `+00:00` with `Z` (and falling back to `new Date().toISOString()`
+ * for any other offset) produces a clean `…T14:38:30.459000Z` that round-trips
+ * through URLSearchParams without any encoding surprises.
+ */
+function toUtcZ(date: string): string {
+  // Fast path: already in Z form
+  if (date.endsWith("Z")) return date;
+  // Replace trailing +00:00 (the only offset OpenF1 ever returns)
+  if (date.endsWith("+00:00")) return date.slice(0, -6) + "Z";
+  // Fallback: parse and re-serialise via the JS Date engine
+  return new Date(date).toISOString();
+}
+
 /** Resolves after `ms` milliseconds. Used for rate-limit back-off. */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -192,7 +214,7 @@ export async function getPositions(
   dateGt?: string,
 ): Promise<Position[]> {
   const params = new URLSearchParams({ session_key: String(sessionKey) });
-  if (dateGt !== undefined) params.set("date_gt", dateGt);
+  if (dateGt !== undefined) params.set("date_gt", toUtcZ(dateGt));
   const res = await fetchWithRetry(`${BASE_URL}/position?${params.toString()}`);
   return handleResponse<Position[]>(res, true);
 }
@@ -203,14 +225,25 @@ export async function getPositions(
  * Returns raw telemetry X/Y/Z coordinates per driver. Poll every ~1 s.
  * Pass `dateGt` on subsequent polls. Coordinates must be normalised via
  * `src/utils/coordinates.ts` before use in SVG.
+ *
+ * `dateLt` bounds the upper end of the window — used by useLocationSnapshot
+ * to fetch a fixed-width slice of history for the replay scrubber.
+ *
+ * ⚠️  OpenF1 filter syntax for this endpoint is `date>` / `date<`, NOT
+ * `date_gt` / `date_lt`. We build those parts with string concatenation
+ * instead of URLSearchParams so the `>` and `<` characters are preserved
+ * as literals in the URL and are not percent-encoded to `%3E` / `%3C`.
  */
 export async function getLocations(
   sessionKey: number | "latest",
   dateGt?: string,
+  dateLt?: string,
 ): Promise<Location[]> {
-  const params = new URLSearchParams({ session_key: String(sessionKey) });
-  if (dateGt !== undefined) params.set("date_gt", dateGt);
-  const res = await fetchWithRetry(`${BASE_URL}/location?${params.toString()}`);
+  // session_key is safe for URLSearchParams; date filters are not.
+  let url = `${BASE_URL}/location?session_key=${encodeURIComponent(String(sessionKey))}`;
+  if (dateGt !== undefined) url += `&date>${toUtcZ(dateGt)}`;
+  if (dateLt !== undefined) url += `&date<${toUtcZ(dateLt)}`;
+  const res = await fetchWithRetry(url);
   return handleResponse<Location[]>(res, true);
 }
 
@@ -225,7 +258,7 @@ export async function getIntervals(
   dateGt?: string,
 ): Promise<Interval[]> {
   const params = new URLSearchParams({ session_key: String(sessionKey) });
-  if (dateGt !== undefined) params.set("date_gt", dateGt);
+  if (dateGt !== undefined) params.set("date_gt", toUtcZ(dateGt));
   const res = await fetchWithRetry(
     `${BASE_URL}/intervals?${params.toString()}`,
   );
@@ -258,7 +291,7 @@ export async function getRaceControl(
   dateGt?: string,
 ): Promise<RaceControl[]> {
   const params = new URLSearchParams({ session_key: String(sessionKey) });
-  if (dateGt !== undefined) params.set("date_gt", dateGt);
+  if (dateGt !== undefined) params.set("date_gt", toUtcZ(dateGt));
   const res = await fetchWithRetry(
     `${BASE_URL}/race_control?${params.toString()}`,
   );
@@ -276,7 +309,7 @@ export async function getLaps(
   dateGt?: string,
 ): Promise<Lap[]> {
   const params = new URLSearchParams({ session_key: String(sessionKey) });
-  if (dateGt !== undefined) params.set("date_gt", dateGt);
+  if (dateGt !== undefined) params.set("date_gt", toUtcZ(dateGt));
   const res = await fetchWithRetry(`${BASE_URL}/laps?${params.toString()}`);
   return handleResponse<Lap[]>(res, true);
 }
