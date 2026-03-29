@@ -24,7 +24,7 @@ if [ -z "$VITE_OPENF1_API_KEY" ] || [ "$VITE_OPENF1_API_KEY" = "null" ]; then
 else
   # Overwrite existing key if present, otherwise append
   if grep -q "VITE_OPENF1_API_KEY" .env; then
-    sed -i "s/VITE_OPENF1_API_KEY=.*/VITE_OPENF1_API_KEY=$VITE_OPENF1_API_KEY/" .env
+    sed -i '' "s/VITE_OPENF1_API_KEY=.*/VITE_OPENF1_API_KEY=$VITE_OPENF1_API_KEY/" .env
   else
     echo "VITE_OPENF1_API_KEY=$VITE_OPENF1_API_KEY" >> .env
   fi
