@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useCircuit } from "../hooks/useCircuit";
 import { normalizeCoords, computeBoundsFromArrays } from "../utils/coordinates";
-import { getTeamColor } from "../utils/teamColors";
+import { driverTeamColor } from "../utils/teamColors";
 import { DriverDot } from "./DriverDot";
 import type { TrackMapProps } from "../types/f1";
 
@@ -231,10 +231,7 @@ export default function TrackMap({
       INNER_HEIGHT,
     );
 
-    // Prefer the API-provided team_colour; fall back to our palette.
-    const color = driver.team_colour
-      ? `#${driver.team_colour}`
-      : getTeamColor(driver.team_name);
+    const color = driverTeamColor(driver);
 
     return [
       <DriverDot

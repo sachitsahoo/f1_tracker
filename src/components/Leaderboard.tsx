@@ -7,7 +7,7 @@ import type {
   LeaderboardProps,
   Stint,
 } from "../types/f1";
-import { getTeamColor } from "../utils/teamColors";
+import { driverTeamColor } from "../utils/teamColors";
 
 // ─── Loading skeleton ─────────────────────────────────────────────────────────
 
@@ -310,9 +310,7 @@ export default function Leaderboard({
             const lap = lapMap[pos.driver_number];
             const isFirst = pos.position === 1;
 
-            const teamColor = driver
-              ? getTeamColor(driver.team_name)
-              : "#FFFFFF";
+            const teamColor = driver ? driverTeamColor(driver) : "#FFFFFF";
             const abbrev = driver?.name_acronym ?? String(pos.driver_number);
             const age = stint ? tireAge(stint, currentLap) : null;
 
