@@ -141,6 +141,38 @@ export interface DriverDotProps {
   driverNumber: number;
 }
 
+/** Props for the Leaderboard right-panel component. */
+export interface LeaderboardProps {
+  /** Positions sorted ascending by position number (P1 first). */
+  positions: Position[];
+  /** Full driver roster for the session — used for abbreviation and team name. */
+  drivers: Driver[];
+  /**
+   * Latest known interval per driver, keyed by driver_number.
+   * Comes directly from useIntervals(). Gaps are already formatted strings from the API.
+   */
+  intervals: Record<number, Interval>;
+  /**
+   * Current active stint per driver, keyed by driver_number.
+   * Should be the most-recent stint from useStints().
+   */
+  stints: Record<number, Stint>;
+  /**
+   * Most recent completed lap per driver, keyed by driver_number.
+   * Comes from useLaps(). Used to display last lap time.
+   */
+  laps: Record<number, Lap>;
+  /** Current lap number in the race. Null when unknown or off-season. */
+  currentLap: number | null;
+  /** Total scheduled race laps. Null when unknown. */
+  totalLaps: number | null;
+  /**
+   * True when a live session is active; false for historical/replay data.
+   * When false a REPLAY badge is shown in the header.
+   */
+  isLive: boolean;
+}
+
 /** Props for the TrackMap composite component. */
 export interface TrackMapProps {
   /** OpenF1 circuit_key from the session — never hardcoded. */
