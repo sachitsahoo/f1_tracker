@@ -2,3 +2,4 @@
 - useInterval hook centralises cleanup — all polling goes through it, never raw setInterval
 - Compute bounds once on circuit load, then reuse for all driver dot normalisation
 - CSS transition on DriverDot SVG circles gives smooth movement between 1s polling updates
+- Leaderboard must handle missing interval/stint data gracefully — gaps appear mid-race only

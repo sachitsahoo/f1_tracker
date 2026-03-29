@@ -173,6 +173,25 @@ export interface LeaderboardProps {
   isLive: boolean;
 }
 
+/** Props for the StatusBar top-of-page component. */
+export interface StatusBarProps {
+  /**
+   * Current session, or null when no session has loaded yet / off-season.
+   * Provides session_key (used internally to poll race control) and
+   * session_name / circuit_short_name for display.
+   */
+  session: Session | null;
+  /** Current lap number in the race. Null when unknown or not yet started. */
+  currentLap: number | null;
+  /** Total scheduled race laps. Null when unknown. */
+  totalLaps: number | null;
+  /**
+   * True when a live session is active (date_start ≤ now ≤ date_end).
+   * False for historical/replay data. When session is null, treat as off-season.
+   */
+  isLive: boolean;
+}
+
 /** Props for the TrackMap composite component. */
 export interface TrackMapProps {
   /** OpenF1 circuit_key from the session — never hardcoded. */
