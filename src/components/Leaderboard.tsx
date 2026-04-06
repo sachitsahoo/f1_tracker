@@ -69,7 +69,9 @@ function formatGap(gap: string | number | null, position: number): string {
  */
 function tireAge(stint: Stint, currentLap: number | null): number | null {
   if (currentLap == null) return stint.tyre_age_at_start || null;
-  return currentLap - stint.lap_start + (stint.tyre_age_at_start ?? 0);
+  // lap_start is nullable (stints recorded before the first tracked lap).
+  // Treat null as 0 so the age calculation degrades gracefully.
+  return currentLap - (stint.lap_start ?? 0) + (stint.tyre_age_at_start ?? 0);
 }
 
 // ─── Global keyframes (injected once) ────────────────────────────────────────

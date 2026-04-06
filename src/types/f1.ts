@@ -3,14 +3,16 @@
 export interface Session {
   session_key: number;
   session_name: string;
-  session_type: string; // 'Race' | 'Qualifying' | 'Practice 1' | etc.
+  session_type: string; // 'Race' | 'Sprint' | 'Qualifying' | 'Practice 1' | etc.
   date_start: string; // ISO 8601
   date_end: string;
   circuit_key: number;
-  circuit_short_name: string;
-  country_name: string;
-  year: number;
-  location: string;
+  meeting_key?: number;
+  // Fields present in OpenF1 responses but not in the backend /api/sessions endpoint:
+  circuit_short_name?: string;
+  country_name?: string;
+  year?: number;
+  location?: string;
 }
 
 // ─── Drivers ────────────────────────────────────────────────────────────────
@@ -61,7 +63,8 @@ export interface Interval {
 
 export interface Stint {
   driver_number: number;
-  lap_start: number;
+  /** Nullable — OpenF1 returns null for stints recorded before a driver's first lap. */
+  lap_start: number | null;
   lap_end: number | null;
   compound: "SOFT" | "MEDIUM" | "HARD" | "INTERMEDIATE" | "WET" | string;
   tyre_age_at_start: number;

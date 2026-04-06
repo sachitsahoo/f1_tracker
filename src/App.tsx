@@ -196,15 +196,17 @@ export default function App() {
 
   // Stints filtered to those that had started by the selected replay lap,
   // then reduced to the latest (highest lap_start) per driver.
+  // Stints where lap_start is null are included unconditionally (they started
+  // before the first recorded lap) and treated as lap 0 for ordering purposes.
   const stintMap: Record<number, Stint> = useMemo(() => {
     const source =
       !isLive && replayCutoff !== null
-        ? stintsArray.filter((s) => s.lap_start <= replayLap)
+        ? stintsArray.filter((s) => (s.lap_start ?? 0) <= replayLap)
         : stintsArray;
     const map: Record<number, Stint> = {};
     for (const stint of source) {
       const existing = map[stint.driver_number];
-      if (!existing || stint.lap_start > existing.lap_start) {
+      if (!existing || (stint.lap_start ?? 0) > (existing.lap_start ?? 0)) {
         map[stint.driver_number] = stint;
       }
     }

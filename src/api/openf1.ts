@@ -351,6 +351,8 @@ export async function getIntervals(
 /**
  * Returns tire compound and stint info per driver. Updated per pit stop —
  * no `dateGt` filtering needed; re-fetch the full list each time.
+ *
+ * @deprecated Calls OpenF1 directly via the proxy. Prefer `getBackendStints`.
  */
 export async function getStints(
   sessionKey: number | "latest",
@@ -358,6 +360,30 @@ export async function getStints(
   const res = await fetchWithRetry(
     `${BASE_URL}/stints?session_key=${sessionKey}`,
   );
+  return handleResponse<Stint[]>(res, true);
+}
+
+/**
+ * Fetches stints from the project's own backend at GET /api/stints.
+ *
+ * The backend queries Supabase and passes `lap_start` through as-is (nullable),
+ * so callers must treat `lap_start` as `number | null`.
+ *
+ * @param sessionKey  - Required. The numeric session key (never "latest" here —
+ *                      the backend does not support that alias).
+ * @param driverNumber - Optional. Filter results to a single driver.
+ */
+export async function getBackendStints(
+  sessionKey: number,
+  driverNumber?: number,
+): Promise<Stint[]> {
+  const params = new URLSearchParams({
+    session_key: String(sessionKey),
+  });
+  if (driverNumber !== undefined) {
+    params.set("driver_number", String(driverNumber));
+  }
+  const res = await fetchWithRetry(`/api/stints?${params.toString()}`);
   return handleResponse<Stint[]>(res, true);
 }
 
@@ -377,6 +403,27 @@ export async function getRaceControl(
     `${BASE_URL}/race_control?${params.toString()}`,
   );
   return handleResponse<RaceControl[]>(res, true);
+}
+
+/**
+ * Fetches all race control messages for a session from the backend API
+ * (`/api/race-control`), which proxies Supabase and returns records ordered
+ * by date ascending.
+ *
+ * Unlike `getRaceControl()`, this does not go through the OpenF1 rate limiter
+ * or auth layer — it talks to our own backend route.
+ */
+export async function getRaceControlFromApi(
+  sessionKey: number,
+): Promise<RaceControl[]> {
+  const params = new URLSearchParams({ session_key: String(sessionKey) });
+  const res = await fetch(`/api/race-control?${params.toString()}`);
+  if (!res.ok) {
+    const message = await res.text().catch(() => res.statusText);
+    const err: ApiError = { status: res.status, message };
+    throw err;
+  }
+  return res.json() as Promise<RaceControl[]>;
 }
 
 // ─── Laps ─────────────────────────────────────────────────────────────────────

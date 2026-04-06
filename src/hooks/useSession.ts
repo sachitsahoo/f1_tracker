@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import type { Session, ApiError } from "../types/f1";
 
-const BASE_URL = "/api/openf1";
+const BASE_URL = "/api";
 
 export interface UseSessionResult {
   session: Session | null;
@@ -10,10 +10,12 @@ export interface UseSessionResult {
 }
 
 /**
- * Fetches the latest Race-type session for the current year.
+ * Fetches the most recent Race or Sprint session for the current year from
+ * the backend API at GET /api/sessions?year=<year>.
+ *
  * Runs once on mount — sessions are static within a race weekend.
- * Filters explicitly for session_type=Race so qualifying / practice
- * sessions are excluded.
+ * Only considers sessions that have already started (date_start ≤ now) so
+ * future scheduled rounds are never accidentally selected.
  */
 export function useSession(): UseSessionResult {
   const [session, setSession] = useState<Session | null>(null);
@@ -23,15 +25,13 @@ export function useSession(): UseSessionResult {
   useEffect(() => {
     let cancelled = false;
 
-    async function fetchLatestRaceSession(): Promise<void> {
+    async function fetchLatestSession(): Promise<void> {
       setLoading(true);
       setError(null);
 
       try {
         const year = new Date().getFullYear();
-        const res = await fetch(
-          `${BASE_URL}/sessions?year=${year}&session_type=Race`,
-        );
+        const res = await fetch(`${BASE_URL}/sessions?year=${year}`);
 
         if (!res.ok) {
           const message = await res.text().catch(() => res.statusText);
@@ -44,24 +44,27 @@ export function useSession(): UseSessionResult {
 
         const sessions: Session[] = await res.json();
 
-        // Only consider sessions that have already started — future sessions
-        // (e.g. scheduled rounds later in the calendar) must be excluded so we
-        // don't end up polling for data that doesn't exist yet.
+        // Only Race and Sprint sessions carry live timing data we care about.
+        // Filter to those that have already started, then pick the most recent.
         const now = new Date();
-        const started = sessions
-          .filter((s) => new Date(s.date_start) <= now)
+        const candidates = sessions
+          .filter(
+            (s) =>
+              (s.session_type === "Race" || s.session_type === "Sprint") &&
+              new Date(s.date_start) <= now,
+          )
           .sort(
             (a, b) =>
               new Date(a.date_start).getTime() -
               new Date(b.date_start).getTime(),
           );
 
-        const latest = started.at(-1) ?? null;
+        const latest = candidates.at(-1) ?? null;
 
         if (!latest) {
           throw {
             status: 404,
-            message: `No Race sessions found for ${year}`,
+            message: `No Race or Sprint sessions found for ${year}`,
             isRateLimit: false,
           } satisfies ApiError;
         }
@@ -74,7 +77,7 @@ export function useSession(): UseSessionResult {
       }
     }
 
-    fetchLatestRaceSession();
+    fetchLatestSession();
 
     return () => {
       cancelled = true;

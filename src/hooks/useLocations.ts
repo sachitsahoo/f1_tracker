@@ -1,8 +1,8 @@
-import { useState, useRef, useCallback } from "react";
-import { getLocations } from "../api/openf1";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type { Location, ApiError } from "../types/f1";
 import { useInterval } from "./useInterval";
 
+const BASE_URL = "/api/locations";
 const POLL_INTERVAL_MS = 1_000;
 
 export interface UseLocationsResult {
@@ -17,23 +17,41 @@ export interface UseLocationsResult {
 }
 
 /**
- * Polls /v1/location every 1 second.
+ * Polls GET /api/locations every 1 second.
+ *
+ * Required param:
+ *   - sessionKey  — pass null while the session is still resolving;
+ *                   polling is paused automatically.
+ *
+ * Optional filters forwarded as query params:
+ *   - driverNumber — restrict results to a single driver
+ *   - lapNumber    — restrict results to a specific lap
+ *
  * Uses a `date_gt` cursor so only new telemetry records are fetched per tick.
  * Merges updates into a per-driver map, always keeping the most recent entry.
+ * State and cursor reset whenever sessionKey changes.
  *
  * Note: Raw coordinates must NEVER be passed to SVG elements directly —
  * always use normalizeCoords() from src/utils/coordinates.ts (Rule 4).
- *
- * Pass `null` for sessionKey while the session is still resolving;
- * the interval is paused automatically.
  */
-export function useLocations(sessionKey: number | null): UseLocationsResult {
+export function useLocations(
+  sessionKey: number | null,
+  driverNumber?: number,
+  lapNumber?: number,
+): UseLocationsResult {
   const [locations, setLocations] = useState<Record<number, Location>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
 
   // Cursor ref: ISO timestamp of the last location record received
   const cursorRef = useRef<string | undefined>(undefined);
+
+  // Reset state and cursor whenever the session changes
+  useEffect(() => {
+    cursorRef.current = undefined;
+    setLocations({});
+    setError(null);
+  }, [sessionKey]);
 
   const poll = useCallback(async (): Promise<void> => {
     if (sessionKey === null) return;
@@ -45,7 +63,32 @@ export function useLocations(sessionKey: number | null): UseLocationsResult {
     setError(null);
 
     try {
-      const newLocations = await getLocations(sessionKey, cursorRef.current);
+      const params = new URLSearchParams({
+        session_key: String(sessionKey),
+      });
+
+      if (cursorRef.current !== undefined) {
+        params.set("date_gt", cursorRef.current);
+      }
+      if (driverNumber !== undefined) {
+        params.set("driver_number", String(driverNumber));
+      }
+      if (lapNumber !== undefined) {
+        params.set("lap_number", String(lapNumber));
+      }
+
+      const res = await fetch(`${BASE_URL}?${params}`);
+
+      if (!res.ok) {
+        const message = await res.text().catch(() => res.statusText);
+        throw {
+          status: res.status,
+          message,
+          isRateLimit: res.status === 429,
+        } satisfies ApiError;
+      }
+
+      const newLocations: Location[] = await res.json();
 
       if (newLocations.length > 0) {
         // Advance cursor to the latest timestamp in this batch
@@ -72,7 +115,7 @@ export function useLocations(sessionKey: number | null): UseLocationsResult {
     } finally {
       setLoading(false);
     }
-  }, [sessionKey]);
+  }, [sessionKey, driverNumber, lapNumber]);
 
   // Pause interval when sessionKey is null
   useInterval(poll, sessionKey !== null ? POLL_INTERVAL_MS : null);

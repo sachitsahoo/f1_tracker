@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { getDrivers } from "../api/openf1";
 import type { Driver, ApiError } from "../types/f1";
+
+const BASE_URL = "/api";
 
 export interface UseDriversResult {
   /** Ordered array of all drivers in the session. */
@@ -12,9 +13,10 @@ export interface UseDriversResult {
 }
 
 /**
- * Fetches the driver list for a given session. Driver data is static per
- * session so no polling is needed — the fetch re-runs whenever sessionKey
- * changes (e.g. after useSession resolves).
+ * Fetches the driver list for a given session from the backend API
+ * (GET /api/drivers?session_key=<key>), which proxies Supabase.
+ * Driver data is static per session so no polling is needed — the fetch
+ * re-runs whenever sessionKey changes (e.g. after useSession resolves).
  *
  * Pass `null` for sessionKey while the session is still loading; the hook
  * will wait and not fire until a valid key is available.
@@ -35,7 +37,20 @@ export function useDrivers(sessionKey: number | null): UseDriversResult {
       setError(null);
 
       try {
-        const data = await getDrivers(sessionKey as number);
+        const res = await fetch(
+          `${BASE_URL}/drivers?session_key=${sessionKey}`,
+        );
+
+        if (!res.ok) {
+          const message = await res.text().catch(() => res.statusText);
+          throw {
+            status: res.status,
+            message,
+            isRateLimit: res.status === 429,
+          } satisfies ApiError;
+        }
+
+        const data: Driver[] = await res.json();
 
         if (!cancelled) {
           setDrivers(data);
