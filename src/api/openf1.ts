@@ -10,10 +10,10 @@ import type {
   ApiError,
 } from "../types/f1.ts";
 import { emitApiEvent } from "../utils/apiEvents";
+import { getBearerToken, invalidateToken } from "./auth";
 
 // In dev the Vite proxy rewrites /api/openf1/* → https://api.openf1.org/v1/*
-// and injects the Authorization header server-side (no CORS preflight).
-// In production point this at your own backend proxy.
+// In production Vercel rewrites handle the same forwarding (see vercel.json).
 const BASE_URL = "/api/openf1";
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
@@ -46,21 +46,40 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Wraps `fetch` with two resilience behaviours:
+ * Builds the Authorization header for a request.
+ * Returns an empty object when no token is available (unauthenticated tier).
+ */
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await getBearerToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/**
+ * Wraps `fetch` with three resilience behaviours:
  *
- *  1. **HTTP 429 (rate limit):** emits a `rate-limit` warning event, backs off
+ *  1. **Auth header injection:** attaches a Bearer token when the token proxy
+ *     is configured. Tokens are fetched/cached by getBearerToken().
+ *
+ *  2. **HTTP 401 (token expired):** invalidates the cached token, fetches a
+ *     fresh one, and retries the request exactly once.
+ *
+ *  3. **HTTP 429 (rate limit):** emits a `rate-limit` warning event, backs off
  *     for 60 s (OpenF1 free tier: 30 req/min), then retries exactly once.
  *
- *  2. **Network error (offline / DNS / CORS):** catches the `TypeError` thrown
+ *  4. **Network error (offline / DNS / CORS):** catches the `TypeError` thrown
  *     by the browser's `fetch`, emits a `network-error` event, and rethrows a
  *     typed `ApiError` (status 0) so hooks can retain stale data gracefully.
  */
-async function fetchWithRetry(url: string): Promise<Response> {
+async function fetchWithRetry(
+  url: string,
+  retryOn401 = true,
+): Promise<Response> {
   let res: Response;
+  const headers = await authHeaders();
 
   // ── Initial attempt ────────────────────────────────────────────────────────
   try {
-    res = await fetch(url);
+    res = await fetch(url, { headers });
   } catch (_err) {
     emitApiEvent(
       "network-error",
@@ -74,6 +93,23 @@ async function fetchWithRetry(url: string): Promise<Response> {
     throw error;
   }
 
+  // ── 401 — token expired, refresh and retry once ────────────────────────────
+  if (res.status === 401 && retryOn401) {
+    invalidateToken();
+    const freshHeaders = await authHeaders();
+    try {
+      return await fetch(url, { headers: freshHeaders });
+    } catch (_err) {
+      emitApiEvent("network-error", "Network error during token refresh retry");
+      const error: ApiError = {
+        status: 0,
+        message: "Network error during token refresh retry",
+        isRateLimit: false,
+      };
+      throw error;
+    }
+  }
+
   // ── 429 back-off + single retry ────────────────────────────────────────────
   if (res.status === 429) {
     emitApiEvent(
@@ -82,8 +118,9 @@ async function fetchWithRetry(url: string): Promise<Response> {
     );
     await sleep(60_000);
 
+    const retryHeaders = await authHeaders();
     try {
-      res = await fetch(url);
+      res = await fetch(url, { headers: retryHeaders });
     } catch (_err) {
       emitApiEvent(
         "network-error",

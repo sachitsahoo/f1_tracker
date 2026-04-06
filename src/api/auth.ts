@@ -1,54 +1,108 @@
 /**
- * OpenF1 authentication helpers.
+ * OpenF1 authentication — client-side token proxy layer.
  *
- * The app uses a single long-lived access token stored in VITE_OPENF1_API_KEY.
- * This token is obtained from the OpenF1 OAuth2 endpoint:
- *   POST https://api.openf1.org/token  { username, password }
- * and is valid for 3 600 s (1 hour).  Renew it and update .env as needed.
+ * Credentials (username + password) live exclusively in Vercel platform
+ * environment variables and are never shipped to the browser.
  *
- * Security note: VITE_ env vars are bundled into the client build.  This is
- * acceptable for personal / self-hosted use.  For a public deployment, proxy
- * authenticated requests through your own backend.
+ * The browser fetches a short-lived JWT from /api/token (our own serverless
+ * function) and caches it in memory for the session.  Tokens are refreshed
+ * automatically 100 s before they expire, or immediately on a 401 response.
  *
- * Docs: https://openf1.org/#authentication
+ * In local dev: run `vercel dev` to serve both Vite and the /api/token
+ * function together.  Or set VITE_USE_TOKEN_PROXY=false to skip auth and
+ * use the unauthenticated OpenF1 free tier.
  */
 
-const API_KEY = import.meta.env.VITE_OPENF1_API_KEY as string | undefined;
+import type { TokenProxyResponse } from "../types/f1";
 
-// ─── Exports ─────────────────────────────────────────────────────────────────
+// ─── Build-time flag ──────────────────────────────────────────────────────────
 
-/** True when an API key is present in the environment. */
-export const hasAuthKey: boolean = Boolean(
-  API_KEY && API_KEY.trim().length > 0,
-);
+/** True when the token proxy is enabled (production + vercel dev). */
+export const hasAuthKey: boolean =
+  import.meta.env.VITE_USE_TOKEN_PROXY === "true";
+
+// ─── Module-level cache ───────────────────────────────────────────────────────
+
+let cachedToken: string | null = null;
+let tokenExpiresAt = 0; // Date.now() + 3500 * 1000
+
+/** Deduplicate concurrent callers — they all await the same fetch. */
+let inflight: Promise<string | null> | null = null;
+
+// ─── Internal helpers ─────────────────────────────────────────────────────────
+
+async function fetchTokenFromProxy(): Promise<string | null> {
+  try {
+    const res = await fetch("/api/token");
+
+    if (res.status === 503) {
+      // Credentials not configured — don't spin, return null permanently
+      tokenExpiresAt = Date.now() + 60_000; // retry in 1 min
+      return null;
+    }
+
+    if (!res.ok) return null;
+
+    const body = (await res.json()) as TokenProxyResponse;
+    cachedToken = body.token;
+    tokenExpiresAt = Date.now() + 3_500_000;
+    return cachedToken;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Exports ──────────────────────────────────────────────────────────────────
 
 /**
- * Returns an `Authorization: Bearer` header record when a key is configured.
- * Returns an empty object on the free (unauthenticated) tier.
- *
- * Usage:
- *   const res = await fetch(url, { headers: getAuthHeaders() });
+ * Returns a valid Bearer token, fetching or refreshing as needed.
+ * Multiple concurrent callers share a single in-flight request.
+ * Returns null when the proxy is disabled or credentials are unconfigured.
  */
-export function getAuthHeaders(): Record<string, string> {
-  if (!hasAuthKey) return {};
-  return { Authorization: `Bearer ${API_KEY!}` };
+export async function getBearerToken(): Promise<string | null> {
+  if (!hasAuthKey) return null;
+
+  // Cache hit
+  if (cachedToken && Date.now() < tokenExpiresAt) return cachedToken;
+
+  // Deduplicate concurrent callers
+  if (inflight) return inflight;
+
+  inflight = fetchTokenFromProxy().finally(() => {
+    inflight = null;
+  });
+
+  return inflight;
 }
 
 /**
- * Returns MQTT / WebSocket credentials when a key is configured.
- * The access token is used as the password; the username is a static string
- * (OpenF1 accepts any non-empty username for token-based auth).
- *
- * Returns null on the free (unauthenticated) tier — caller should fall back
- * to REST polling instead.
+ * Zeroes the token cache without triggering a new fetch.
+ * Call this before getBearerToken() to force a refresh (e.g. on 401).
  */
-export function getMqttCredentials(): {
+export function invalidateToken(): void {
+  cachedToken = null;
+  tokenExpiresAt = 0;
+}
+
+/**
+ * Returns an `Authorization: Bearer` header record when a token is available.
+ * Async — awaits getBearerToken() internally.
+ */
+export async function getAuthHeaders(): Promise<Record<string, string>> {
+  const token = await getBearerToken();
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
+}
+
+/**
+ * Returns MQTT credentials when a token is available, null otherwise.
+ * The access token doubles as the MQTT password (OpenF1 token-based auth).
+ */
+export async function getMqttCredentials(): Promise<{
   username: string;
   password: string;
-} | null {
-  if (!hasAuthKey) return null;
-  return {
-    username: "f1-live-tracker",
-    password: API_KEY!,
-  };
+} | null> {
+  const token = await getBearerToken();
+  if (!token) return null;
+  return { username: "f1-live-tracker", password: token };
 }

@@ -473,7 +473,7 @@ const styles: Record<string, React.CSSProperties> = {
   rowLeader: {
     backgroundColor: "#1C1C1C",
     borderLeft: "3px solid #E8002D",
-    paddingLeft: "13px", // compensate for border-left width
+    paddingLeft: "16px",
   },
 
   // ── Position number

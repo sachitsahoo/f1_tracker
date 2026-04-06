@@ -30,7 +30,7 @@ interface LocationMessage extends Location {
  *    updated.  Critical for sessions that are already in progress or
  *    finished — MQTT has no backfill for data before connection time.
  *
- *  MQTT stream (active when VITE_OPENF1_API_KEY is set)
+ *  MQTT stream (active when VITE_USE_TOKEN_PROXY=true)
  *    Overlaid on top of REST for lower-latency live updates.  Messages
  *    are merged into the same state; the cursor prevents REST from
  *    re-fetching data already delivered by MQTT.
@@ -112,64 +112,76 @@ export function useLocationStream(
   useEffect(() => {
     if (!hasAuthKey || sessionKey === null) return;
 
-    const creds = getMqttCredentials()!;
+    let cancelled = false;
+    let client: mqtt.MqttClient | undefined;
 
-    const client = mqtt.connect(MQTT_BROKER_URL, {
-      username: creds.username,
-      password: creds.password,
-      reconnectPeriod: 5_000,
-      connectTimeout: 10_000,
-    });
+    async function connect() {
+      const creds = await getMqttCredentials();
+      if (!creds || cancelled) return;
 
-    client.on("connect", () => {
-      mqttLiveRef.current = true; // pause REST polling while MQTT is up
-      emitApiEvent("success", "");
+      client = mqtt.connect(MQTT_BROKER_URL, {
+        username: creds.username,
+        password: creds.password,
+        reconnectPeriod: 5_000,
+        connectTimeout: 10_000,
+      });
 
-      client.subscribe(LOCATION_TOPIC, (err) => {
-        if (err) {
-          emitApiEvent("network-error", `MQTT subscribe error: ${err.message}`);
+      client.on("connect", () => {
+        mqttLiveRef.current = true;
+        emitApiEvent("success", "");
+
+        client!.subscribe(LOCATION_TOPIC, (err) => {
+          if (err) {
+            emitApiEvent(
+              "network-error",
+              `MQTT subscribe error: ${err.message}`,
+            );
+          }
+        });
+      });
+
+      client.on("message", (_topic: string, payload: Buffer) => {
+        try {
+          const msg = JSON.parse(payload.toString()) as LocationMessage;
+          if (msg.session_key !== sessionKey) return;
+
+          const loc: Location = {
+            driver_number: msg.driver_number,
+            date: msg.date,
+            x: msg.x,
+            y: msg.y,
+            z: msg.z,
+            session_key: msg.session_key,
+          };
+
+          // Advance the REST cursor so polling skips data already received here.
+          if (!cursorRef.current || loc.date > cursorRef.current) {
+            cursorRef.current = loc.date;
+          }
+
+          mergeLocation(loc);
+        } catch {
+          // Malformed JSON — skip
         }
       });
-    });
 
-    client.on("message", (_topic: string, payload: Buffer) => {
-      try {
-        const msg = JSON.parse(payload.toString()) as LocationMessage;
-        if (msg.session_key !== sessionKey) return;
+      client.on("error", (err: Error) => {
+        mqttLiveRef.current = false;
+        emitApiEvent("network-error", `MQTT error: ${err.message}`);
+      });
 
-        const loc: Location = {
-          driver_number: msg.driver_number,
-          date: msg.date,
-          x: msg.x,
-          y: msg.y,
-          z: msg.z,
-          session_key: msg.session_key,
-        };
+      client.on("offline", () => {
+        mqttLiveRef.current = false;
+        emitApiEvent("network-error", "MQTT offline — REST polling will cover");
+      });
+    }
 
-        // Advance the REST cursor so polling skips data already received here.
-        if (!cursorRef.current || loc.date > cursorRef.current) {
-          cursorRef.current = loc.date;
-        }
-
-        mergeLocation(loc);
-      } catch {
-        // Malformed JSON — skip
-      }
-    });
-
-    client.on("error", (err: Error) => {
-      mqttLiveRef.current = false;
-      emitApiEvent("network-error", `MQTT error: ${err.message}`);
-    });
-
-    client.on("offline", () => {
-      mqttLiveRef.current = false; // resume REST polling until MQTT reconnects
-      emitApiEvent("network-error", "MQTT offline — REST polling will cover");
-    });
+    void connect();
 
     return () => {
+      cancelled = true;
       mqttLiveRef.current = false;
-      client.end(true);
+      client?.end(true);
     };
   }, [sessionKey, mergeLocation]);
 

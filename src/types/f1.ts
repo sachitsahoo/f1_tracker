@@ -117,6 +117,16 @@ export interface Lap {
   session_key: number;
 }
 
+// ─── Token proxy ─────────────────────────────────────────────────────────────
+
+export interface TokenProxyResponse {
+  token: string;
+}
+
+export interface TokenProxyError {
+  error: string;
+}
+
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
 export interface ApiError {

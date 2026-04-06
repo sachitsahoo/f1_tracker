@@ -1,0 +1,14 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/openf1/:path*",
+      "destination": "https://api.openf1.org/v1/:path*"
+    }
+  ],
+  "functions": {
+    "api/token.ts": {
+      "runtime": "nodejs20.x",
+      "maxDuration": 10
+    }
+  }
+}
