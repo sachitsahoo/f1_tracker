@@ -82,6 +82,9 @@ export const DRIVER_ACRONYM_COUNTRIES: Record<string, string> = {
   SAR: "USA", // Logan Sargeant
   RIC: "AUS", // Daniel Ricciardo
   COL: "ARG", // Franco Colapinto
+  PER: "MEX", // Sergio Pérez
+  LAT: "CAN", // Nicholas Latifi
+  LIN: "GBR", // Arvid Lindblad
   DEV: "NED", // Nyck de Vries
   // 2023 drivers
   POU: "FRA", // Théo Pourchaire

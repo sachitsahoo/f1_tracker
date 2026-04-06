@@ -145,10 +145,9 @@ export default function App() {
 
   const [replayLap, setReplayLap] = useState<number>(1);
 
-  // Whenever totalLaps resolves or the session changes, jump to the final lap
-  // so the default view shows the end-of-race standings.
+  // Reset to lap 1 whenever the session changes or totalLaps first resolves.
   useEffect(() => {
-    if (totalLaps != null) setReplayLap(totalLaps);
+    if (totalLaps != null) setReplayLap(1);
   }, [sessionKey, totalLaps]);
 
   // ── 4. Derived values ──────────────────────────────────────────────────────

@@ -54,10 +54,10 @@ export const TEAM_COLORS: Record<string, string> = {
   "alfa romeo": "#53FC18",
 
   // Haas
-  haas: "#EB0A1E",
-  "haas f1 team": "#EB0A1E",
-  "moneygramm haas f1 team": "#EB0A1E",
-  "moneygram haas f1 team": "#EB0A1E",
+  haas: "#DFE1E2",
+  "haas f1 team": "#DFE1E2",
+  "moneygramm haas f1 team": "#DFE1E2",
+  "moneygram haas f1 team": "#DFE1E2",
 } as const;
 
 /** Fallback colour rendered when a team name is unrecognised. */

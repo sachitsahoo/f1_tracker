@@ -1,14 +1,26 @@
-import React, { useId } from "react";
+import React, { useId, useState, useEffect } from "react";
 import type { ReplayScrubberProps } from "../types/f1";
+
+// ─── Playback speed ───────────────────────────────────────────────────────────
+// Time in milliseconds between each automatic lap advance during playback.
+// Lower = faster. Typical values: 600 (fast), 1200 (normal), 2500 (slow).
+export const REPLAY_LAP_INTERVAL_MS = 1200;
 
 /**
  * Fixed bottom bar that lets users scrub through a replay session lap-by-lap.
  *
  * Renders:
- * - A full-width range slider (lap 1 → totalLaps)
- * - A lap counter label above the slider ("LAP 32 / 57")
- * - Colour-coded event markers on the rail (SC = yellow, Red Flag = red)
- * - A "JUMP TO END" button on the right edge
+ * - A play/pause button (▶ / ❚❚)
+ * - A lap counter label ("LAP 32 / 57")
+ * - A full-width range slider (lap 1 → totalLaps) with event markers
+ * - A "END →" button on the right edge
+ *
+ * Playback behaviour:
+ * - Play from current lap; auto-pauses after the last lap.
+ * - If already at the last lap when play is pressed, restarts from lap 1.
+ * - Dragging the slider while playing does NOT pause — playback continues
+ *   from wherever the thumb is dropped.
+ * - Speed is controlled by REPLAY_LAP_INTERVAL_MS above.
  *
  * Only rendered by App when !isLive && totalLaps != null.
  */
@@ -19,16 +31,45 @@ export default function ReplayScrubber({
   events,
 }: ReplayScrubberProps) {
   const sliderId = useId();
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  // ── Auto-advance ──────────────────────────────────────────────────────────
+  // Uses setTimeout (not setInterval) so the timer resets cleanly whenever
+  // replayLap changes (e.g. the user drags the slider mid-playback).
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    if (replayLap >= totalLaps) {
+      // Reached the end — auto-pause.
+      setIsPlaying(false);
+      return;
+    }
+
+    const id = setTimeout(() => {
+      onChange(replayLap + 1);
+    }, REPLAY_LAP_INTERVAL_MS);
+
+    return () => clearTimeout(id);
+  }, [isPlaying, replayLap, totalLaps, onChange]);
+
+  // ── Play / pause handler ──────────────────────────────────────────────────
+  function handlePlayPause(): void {
+    if (isPlaying) {
+      setIsPlaying(false);
+    } else {
+      // If at the end, restart from lap 1 before playing.
+      if (replayLap >= totalLaps) onChange(1);
+      setIsPlaying(true);
+    }
+  }
 
   // ── Event markers ────────────────────────────────────────────────────────
-  // Filter to track-wide events with a known lap number, deduplicate by lap.
   const markers = React.useMemo(() => {
     const seen = new Set<string>();
     const result: { lap: number; color: string; title: string }[] = [];
 
     for (const evt of events) {
       if (evt.lap_number == null) continue;
-      // Only track-level flags; skip per-driver messages
       if (evt.scope !== "Track" && evt.scope !== null) continue;
 
       const flag = (evt.flag ?? "").toUpperCase();
@@ -50,7 +91,7 @@ export default function ReplayScrubber({
         color = "#E8002D";
         title = "Red Flag";
       } else {
-        continue; // not a landmark event
+        continue;
       }
 
       const key = `${evt.lap_number}-${color}`;
@@ -64,6 +105,7 @@ export default function ReplayScrubber({
   }, [events]);
 
   const atEnd = replayLap >= totalLaps;
+  const pct = ((replayLap - 1) / Math.max(totalLaps - 1, 1)) * 100;
 
   return (
     <>
@@ -78,8 +120,8 @@ export default function ReplayScrubber({
           background: linear-gradient(
             to right,
             #E8002D 0%,
-            #E8002D ${((replayLap - 1) / Math.max(totalLaps - 1, 1)) * 100}%,
-            #333333 ${((replayLap - 1) / Math.max(totalLaps - 1, 1)) * 100}%,
+            #E8002D ${pct}%,
+            #333333 ${pct}%,
             #333333 100%
           );
           outline: none;
@@ -115,16 +157,25 @@ export default function ReplayScrubber({
       `}</style>
 
       <div style={styles.bar} role="region" aria-label="Replay scrubber">
-        {/* ── Left: lap counter ──────────────────────────────────────────── */}
+        {/* ── Play / pause button ────────────────────────────────────────── */}
+        <button
+          style={styles.playBtn}
+          onClick={handlePlayPause}
+          title={isPlaying ? "Pause" : atEnd ? "Restart from lap 1" : "Play"}
+          aria-label={isPlaying ? "Pause replay" : "Play replay"}
+        >
+          {isPlaying ? "❚❚" : "▶"}
+        </button>
+
+        {/* ── Lap counter ────────────────────────────────────────────────── */}
         <span style={styles.lapLabel} aria-live="polite" aria-atomic="true">
           LAP <span style={styles.lapCurrent}>{replayLap}</span>
           <span style={styles.lapSep}> / </span>
           <span style={styles.lapTotal}>{totalLaps}</span>
         </span>
 
-        {/* ── Centre: slider + markers ───────────────────────────────────── */}
+        {/* ── Slider + markers ───────────────────────────────────────────── */}
         <div style={styles.sliderWrap}>
-          {/* Event markers overlaid above the track */}
           {markers.map((m) => (
             <button
               key={`${m.lap}-${m.color}`}
@@ -156,13 +207,16 @@ export default function ReplayScrubber({
           />
         </div>
 
-        {/* ── Right: jump-to-end button ──────────────────────────────────── */}
+        {/* ── Jump to end ────────────────────────────────────────────────── */}
         <button
           style={{
             ...styles.endBtn,
             ...(atEnd ? styles.endBtnDisabled : {}),
           }}
-          onClick={() => onChange(totalLaps)}
+          onClick={() => {
+            setIsPlaying(false);
+            onChange(totalLaps);
+          }}
           disabled={atEnd}
           title="Jump to end of race"
           aria-label="Jump to end of race"
@@ -191,11 +245,31 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 100,
     display: "flex",
     alignItems: "center",
-    gap: "16px",
+    gap: "12px",
     padding: "10px 20px 12px",
     backgroundColor: "#141414",
     borderTop: "1px solid #2A2A2A",
     boxSizing: "border-box",
+  },
+
+  playBtn: {
+    ...BASE_FONT,
+    flexShrink: 0,
+    width: "32px",
+    height: "32px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "12px",
+    fontWeight: 700,
+    backgroundColor: "#E8002D",
+    color: "#FFFFFF",
+    border: "none",
+    borderRadius: "50%",
+    cursor: "pointer",
+    transition: "background-color 0.15s ease, transform 0.1s ease",
+    letterSpacing: 0,
+    lineHeight: 1,
   },
 
   lapLabel: {
@@ -226,17 +300,16 @@ const styles: Record<string, React.CSSProperties> = {
     position: "relative",
     display: "flex",
     alignItems: "center",
-    paddingTop: "12px", // room for marker dots above the rail
+    paddingTop: "12px",
   },
 
-  // Clickable event marker dot positioned above the rail
   marker: {
     position: "absolute",
     top: 0,
     width: "8px",
     height: "8px",
     borderRadius: "50%",
-    transform: "translateX(-4px)", // centre on the lap position
+    transform: "translateX(-4px)",
     cursor: "pointer",
     border: "none",
     padding: 0,
