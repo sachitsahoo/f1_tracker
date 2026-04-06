@@ -1,4 +1,4 @@
-import React, { useId, useState, useEffect } from "react";
+import React, { useId, useState, useEffect, useRef } from "react";
 import type { ReplayScrubberProps } from "../types/f1";
 
 // ─── Playback speed ───────────────────────────────────────────────────────────
@@ -33,31 +33,40 @@ export default function ReplayScrubber({
   const sliderId = useId();
   const [isPlaying, setIsPlaying] = useState(false);
 
+  // Ref holds the pending timeout ID so we can cancel it synchronously in the
+  // click handler — before React's effect cleanup runs (which is post-paint).
+  const pendingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function cancelPending(): void {
+    if (pendingRef.current !== null) {
+      clearTimeout(pendingRef.current);
+      pendingRef.current = null;
+    }
+  }
+
   // ── Auto-advance ──────────────────────────────────────────────────────────
-  // Uses setTimeout (not setInterval) so the timer resets cleanly whenever
-  // replayLap changes (e.g. the user drags the slider mid-playback).
   useEffect(() => {
     if (!isPlaying) return;
 
     if (replayLap >= totalLaps) {
-      // Reached the end — auto-pause.
       setIsPlaying(false);
       return;
     }
 
-    const id = setTimeout(() => {
+    pendingRef.current = setTimeout(() => {
+      pendingRef.current = null;
       onChange(replayLap + 1);
     }, REPLAY_LAP_INTERVAL_MS);
 
-    return () => clearTimeout(id);
+    return cancelPending;
   }, [isPlaying, replayLap, totalLaps, onChange]);
 
   // ── Play / pause handler ──────────────────────────────────────────────────
   function handlePlayPause(): void {
     if (isPlaying) {
+      cancelPending(); // synchronous — fires before any re-render
       setIsPlaying(false);
     } else {
-      // If at the end, restart from lap 1 before playing.
       if (replayLap >= totalLaps) onChange(1);
       setIsPlaying(true);
     }
