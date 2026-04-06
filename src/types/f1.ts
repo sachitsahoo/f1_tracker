@@ -278,4 +278,6 @@ export interface TrackMapProps {
    * Comes directly from useLocations().locations.
    */
   locations: Record<number, Location>;
+  /** Whether the session is currently live. Controls LIVE vs REPLAY badge. */
+  isLive?: boolean;
 }

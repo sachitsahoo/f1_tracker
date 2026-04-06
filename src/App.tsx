@@ -291,6 +291,7 @@ export default function App() {
               year={session.year}
               drivers={drivers}
               locations={displayLocations}
+              isLive={isLive}
             />
           ) : (
             /* Placeholder when there is genuinely no session to display */
