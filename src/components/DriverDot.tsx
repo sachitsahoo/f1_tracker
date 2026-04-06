@@ -15,14 +15,23 @@ import type { DriverDotProps } from "../types/f1";
  * - Driver abbreviation in white at 6.5px, centered inside the dot
  * - Outer pulsing glow ring signals live telemetry activity
  */
-export function DriverDot({ svgX, svgY, color, abbreviation }: DriverDotProps) {
+export function DriverDot({
+  svgX,
+  svgY,
+  color,
+  abbreviation,
+  transitionMs = 800,
+}: DriverDotProps) {
   return (
     <g
       style={{
         // CSS transform positions the group so all child elements use (0,0) as origin.
-        // transition: transform covers both x and y movement between polling updates.
+        // transitionMs=800: live mode, smooths 1 s polling gaps.
+        // transitionMs=0:   replay mode, rAF drives position — CSS transition must
+        //                   be disabled or it would lag behind the animation loop.
         transform: `translate(${svgX}px, ${svgY}px)`,
-        transition: "transform 0.8s ease",
+        transition:
+          transitionMs > 0 ? `transform ${transitionMs}ms ease` : "none",
       }}
       aria-label={abbreviation}
     >

@@ -199,6 +199,14 @@ export interface DriverDotProps {
   abbreviation: string;
   /** Driver number — used as React key by the parent. */
   driverNumber: number;
+  /**
+   * Duration of the CSS `transform` transition in milliseconds.
+   * Pass `800` for live mode (smooth 1 s poll interpolation).
+   * Pass `0` when TrackMap is driving position via requestAnimationFrame
+   * (replay animation) — a CSS transition would fight the rAF loop.
+   * Defaults to 800.
+   */
+  transitionMs?: number;
 }
 
 /** Props for the Leaderboard right-panel component. */
