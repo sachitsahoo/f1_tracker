@@ -31,3 +31,5 @@ dist-ssr
 .claude-memory.md
 .agents
 /supabase
+.vercel
+.env*.local
