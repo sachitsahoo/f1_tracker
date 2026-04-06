@@ -12,6 +12,8 @@
     "typecheck:scripts": "tsc --project tsconfig.scripts.json --noEmit"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.101.1",
+    "dotenv": "^17.4.1",
     "mqtt": "^5.15.1",
     "pg": "^8.13.0",
     "react": "^19.2.4",

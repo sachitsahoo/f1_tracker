@@ -19,7 +19,7 @@ All external data fetching lives here. No React, no hooks — pure async functio
 
 `https://api.openf1.org/v1/`
 
-Rate limit: 3 req/s, 30 req/min. Add `date_gt=<ISO timestamp>` to incremental polls.
+Rate limit: 6 req/s, 60 req/min (sponsor tier). Add `date_gt=<ISO timestamp>` to incremental polls.
 
 ## MultiViewer Base URL
 

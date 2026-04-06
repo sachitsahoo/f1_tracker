@@ -29,6 +29,7 @@
 
 import pg from "pg";
 import type { PoolClient } from "pg";
+import "dotenv/config";
 import type {
   Session,
   Driver,
@@ -52,7 +53,7 @@ const DELAY_MS = 400;
 /** Rows per INSERT batch — stays under pg's 65 535 parameter limit. */
 const BATCH_SIZE = 500;
 /** Years to seed. Adjust as new seasons complete. */
-const SEED_YEARS = [2023, 2024, 2025] as const;
+const SEED_YEARS = [2023, 2024, 2025, 2026] as const;
 
 // ─── Startup validation ───────────────────────────────────────────────────────
 

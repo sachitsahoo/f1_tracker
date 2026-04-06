@@ -7,6 +7,7 @@ import type {
   LeaderboardProps,
   Stint,
 } from "../types/f1";
+import { getDriverFlagUrl } from "../utils/countryFlags";
 import { driverTeamColor } from "../utils/teamColors";
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -77,6 +78,28 @@ const GLOBAL_STYLES = `
   @keyframes f1-shimmer {
     0%   { background-position: -800px 0; }
     100% { background-position:  800px 0; }
+  }
+  .f1-flag {
+    display: inline-block;
+    width: 22px;
+    height: 15px;
+    object-fit: cover;
+    border-radius: 2px;
+    flex-shrink: 0;
+    opacity: 0.88;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.10), 0 1px 3px rgba(0,0,0,0.55);
+    transition: opacity 0.2s ease;
+    vertical-align: middle;
+  }
+  .f1-flag:hover { opacity: 1; }
+  .f1-flag-placeholder {
+    display: inline-block;
+    width: 22px;
+    height: 15px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    background: #222;
+    border: 1px solid #333;
   }
 `;
 
@@ -338,8 +361,38 @@ export default function Leaderboard({
                   {pos.position}
                 </span>
 
-                {/* Driver abbreviation */}
+                {/* Driver abbreviation + nationality flag */}
                 <span style={{ ...styles.colDriver, ...styles.driverCell }}>
+                  {/* Country flag — falls back to acronym map when API returns null */}
+                  {(() => {
+                    const flag1x = getDriverFlagUrl(
+                      driver?.country_code,
+                      driver?.name_acronym,
+                      1,
+                    );
+                    const flag2x = getDriverFlagUrl(
+                      driver?.country_code,
+                      driver?.name_acronym,
+                      2,
+                    );
+                    return flag1x ? (
+                      <img
+                        className="f1-flag"
+                        src={flag1x}
+                        srcSet={`${flag1x} 1x, ${flag2x ?? flag1x} 2x`}
+                        alt={driver?.country_code ?? driver?.name_acronym ?? ""}
+                        title={
+                          driver?.country_code ?? driver?.name_acronym ?? ""
+                        }
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <span
+                        className="f1-flag-placeholder"
+                        aria-hidden="true"
+                      />
+                    );
+                  })()}
                   <span style={styles.abbreviation}>{abbrev}</span>
                 </span>
 
@@ -465,7 +518,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   // ── Column widths (shared between header and data rows)
   colPos: { width: "32px", flexShrink: 0 },
-  colDriver: { flex: 1, minWidth: "80px" },
+  colDriver: { flex: 1, minWidth: "110px" },
   colGap: { width: "80px", flexShrink: 0, textAlign: "right" as const },
   colTire: { width: "68px", flexShrink: 0, textAlign: "center" as const },
   colLap: { width: "84px", flexShrink: 0, textAlign: "right" as const },
@@ -505,7 +558,7 @@ const styles: Record<string, React.CSSProperties> = {
   driverCell: {
     display: "flex",
     alignItems: "center",
-    gap: 0,
+    gap: "7px",
   },
   // Driver abbreviation — bold white, generous letter-spacing
   abbreviation: {

@@ -45,6 +45,46 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ─── Sliding-window rate limiter ──────────────────────────────────────────────
+//
+// OpenF1 sponsor tier: 6 req/s hard limit.  We self-limit to 5 req/s (one
+// buffer slot) so a transient burst never causes a 429.
+//
+// Algorithm: track the start timestamps of in-flight / recently-completed
+// requests in a circular list.  Before firing any request, check how many
+// timestamps fall within the last 1 000 ms.  If already at the cap, sleep
+// until the oldest timestamp exits the window, then proceed.
+//
+// React StrictMode mounts components twice in development, which doubles the
+// number of simultaneous requests.  The limiter absorbs that automatically —
+// excess requests queue up and drain at ≤ 5/s instead of all firing at once.
+
+const RATE_LIMIT_PER_SEC = 5; // 1 below the 6/s hard limit
+const RATE_WINDOW_MS = 1_000;
+const _requestTimestamps: number[] = [];
+
+async function acquireSlot(): Promise<void> {
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const now = Date.now();
+    const cutoff = now - RATE_WINDOW_MS;
+
+    // Evict timestamps that have left the sliding window
+    while (_requestTimestamps.length > 0 && _requestTimestamps[0] < cutoff) {
+      _requestTimestamps.shift();
+    }
+
+    if (_requestTimestamps.length < RATE_LIMIT_PER_SEC) {
+      _requestTimestamps.push(now);
+      return; // slot acquired — proceed with the request
+    }
+
+    // Window is full: wait until the oldest slot expires, then re-check
+    const waitMs = _requestTimestamps[0] + RATE_WINDOW_MS - now + 5;
+    await sleep(waitMs > 0 ? waitMs : 5);
+  }
+}
+
 /**
  * Builds the Authorization header for a request.
  * Returns an empty object when no token is available (unauthenticated tier).
@@ -64,7 +104,7 @@ async function authHeaders(): Promise<Record<string, string>> {
  *     fresh one, and retries the request exactly once.
  *
  *  3. **HTTP 429 (rate limit):** emits a `rate-limit` warning event, backs off
- *     for 60 s (OpenF1 free tier: 30 req/min), then retries exactly once.
+ *     for 60 s (OpenF1 sponsor tier: 6 req/s · 60 req/min), then retries exactly once.
  *
  *  4. **Network error (offline / DNS / CORS):** catches the `TypeError` thrown
  *     by the browser's `fetch`, emits a `network-error` event, and rethrows a
@@ -74,6 +114,10 @@ async function fetchWithRetry(
   url: string,
   retryOn401 = true,
 ): Promise<Response> {
+  // Throttle: wait for an available slot before firing the request.
+  // This prevents startup bursts from hitting the 6 req/s OpenF1 cap.
+  await acquireSlot();
+
   let res: Response;
   const headers = await authHeaders();
 

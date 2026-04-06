@@ -5,14 +5,14 @@
 
 export const TEAM_COLORS: Record<string, string> = {
   // Red Bull
-  red_bull: "#3671C6",
-  "red bull racing": "#3671C6",
-  "red bull": "#3671C6",
+  red_bull: "#003773",
+  "red bull racing": "#003773",
+  "red bull": "#003773",
 
   // Ferrari
-  ferrari: "#E8002D",
-  "scuderia ferrari": "#E8002D",
-  "scuderia ferrari hp": "#E8002D",
+  ferrari: "#821729",
+  "scuderia ferrari": "#821729",
+  "scuderia ferrari hp": "#821729",
 
   // Mercedes
   mercedes: "#27F4D2",
@@ -24,19 +24,19 @@ export const TEAM_COLORS: Record<string, string> = {
   "mclaren f1 team": "#FF8000",
 
   // Aston Martin
-  aston_martin: "#229971",
-  "aston martin": "#229971",
-  "aston martin aramco": "#229971",
-  "aston martin f1 team": "#229971",
+  aston_martin: "#037A68",
+  "aston martin": "#037A68",
+  "aston martin aramco": "#037A68",
+  "aston martin f1 team": "#037A68",
 
   // Alpine
-  alpine: "#FF87BC",
-  "alpine f1 team": "#FF87BC",
-  "bwt alpine f1 team": "#FF87BC",
+  alpine: "#F282B4",
+  "alpine f1 team": "#F282B4",
+  "bwt alpine f1 team": "#F282B4",
 
   // Williams
-  williams: "#64C4FF",
-  "williams racing": "#64C4FF",
+  williams: "#00A0DE",
+  "williams racing": "#00A0DE",
 
   // Racing Bulls (formerly AlphaTauri / Toro Rosso)
   rb: "#6692FF",
@@ -47,17 +47,17 @@ export const TEAM_COLORS: Record<string, string> = {
   "scuderia alphatauri": "#6692FF",
 
   // Kick Sauber (formerly Alfa Romeo)
-  kick_sauber: "#52E252",
-  "kick sauber": "#52E252",
-  sauber: "#52E252",
-  "stake f1 team kick sauber": "#52E252",
-  "alfa romeo": "#52E252",
+  kick_sauber: "#53FC18",
+  "kick sauber": "#53FC18",
+  sauber: "#53FC18",
+  "stake f1 team kick sauber": "#53FC18",
+  "alfa romeo": "#53FC18",
 
   // Haas
-  haas: "#B6BABD",
-  "haas f1 team": "#B6BABD",
-  "moneygramm haas f1 team": "#B6BABD",
-  "moneygram haas f1 team": "#B6BABD",
+  haas: "#EB0A1E",
+  "haas f1 team": "#EB0A1E",
+  "moneygramm haas f1 team": "#EB0A1E",
+  "moneygram haas f1 team": "#EB0A1E",
 } as const;
 
 /** Fallback colour rendered when a team name is unrecognised. */
@@ -96,8 +96,15 @@ export function driverTeamColor(driver: {
   team_colour: string;
   team_name: string;
 }): string {
+  // Our custom palette takes precedence — ensures brand-accurate colours
+  // regardless of what the OpenF1 API returns for team_colour.
+  const normalised = driver.team_name.trim().toLowerCase();
+  if (TEAM_COLORS[normalised]) {
+    return TEAM_COLORS[normalised];
+  }
+  // Fall back to the API-supplied hex for any unrecognised team name
   if (driver.team_colour && driver.team_colour.length === 6) {
     return `#${driver.team_colour}`;
   }
-  return getTeamColor(driver.team_name);
+  return FALLBACK_COLOR;
 }

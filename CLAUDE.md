@@ -36,8 +36,8 @@ npm install
 ### Primary: OpenF1 (Recommended)
 
 **URL:** `https://api.openf1.org/v1/`  
-**Cost:** Free, no API key required for historical + polling use  
-**Rate limit:** 3 req/s, 30 req/min on the free tier  
+**Auth:** JWT via username/password (sponsor tier — see Backend Architecture)  
+**Rate limit:** 6 req/s, 60 req/min (sponsor tier)  
 **Docs:** https://openf1.org/docs/
 
 Key endpoints for this project:

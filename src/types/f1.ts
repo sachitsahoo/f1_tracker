@@ -23,6 +23,7 @@ export interface Driver {
   team_name: string; // e.g. "red_bull" (snake_case from API)
   team_colour: string; // hex without #, e.g. "3671C6"
   headshot_url: string | null;
+  country_code?: string; // IOC 3-letter country code, e.g. "NED", "GBR"
   session_key: number;
 }
 

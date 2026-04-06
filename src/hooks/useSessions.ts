@@ -28,33 +28,41 @@ export function useSessions(): UseSessionsResult {
       setLoading(true);
       setError(null);
 
-      const results = await Promise.allSettled([
-        getRaceSessions(2025),
-        getRaceSessions(2026),
-      ]);
+      try {
+        const results = await Promise.allSettled([
+          getRaceSessions(2025),
+          getRaceSessions(2026),
+        ]);
 
-      if (cancelled) return;
+        // React StrictMode unmounts + remounts in dev — the cleanup sets
+        // cancelled=true before this point. Return without updating state so
+        // the second mount's load() call owns the final state update.
+        if (cancelled) return;
 
-      const all: Session[] = [];
-      let firstError: ApiError | null = null;
+        const all: Session[] = [];
+        let firstError: ApiError | null = null;
 
-      for (const result of results) {
-        if (result.status === "fulfilled") {
-          all.push(...result.value);
-        } else if (!firstError) {
-          firstError = result.reason as ApiError;
+        for (const result of results) {
+          if (result.status === "fulfilled") {
+            all.push(...result.value);
+          } else if (!firstError) {
+            firstError = result.reason as ApiError;
+          }
         }
+
+        all.sort(
+          (a, b) =>
+            new Date(b.date_start).getTime() - new Date(a.date_start).getTime(),
+        );
+
+        setSessions(all);
+        if (all.length === 0 && firstError) setError(firstError);
+      } finally {
+        // Always clear loading — even if cancelled or an unexpected exception
+        // is thrown. Without this, a StrictMode cancel leaves loading=true
+        // permanently if the second mount's fetch also fails.
+        if (!cancelled) setLoading(false);
       }
-
-      // Sort newest-first for the dropdown
-      all.sort(
-        (a, b) =>
-          new Date(b.date_start).getTime() - new Date(a.date_start).getTime(),
-      );
-
-      setSessions(all);
-      if (all.length === 0 && firstError) setError(firstError);
-      setLoading(false);
     }
 
     void load();

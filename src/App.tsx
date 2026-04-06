@@ -82,34 +82,64 @@ export default function App() {
     error: sessionError,
   } = useSessions();
 
-  const [selectedSession, setSelectedSession] = useState<Session | null>(null);
+  // Tracks the session the user has explicitly chosen from the picker.
+  // null means "follow the default" — session always reflects the latest race
+  // until the user overrides it. This prevents a stale auto-selection when
+  // useSessions resolves its two parallel fetches at different times and
+  // defaultSession flips to a newer race after selectedSession was already set.
+  const [userPickedSession, setUserPickedSession] = useState<Session | null>(
+    null,
+  );
 
-  // Set the default session once it resolves (only if user hasn't picked one yet)
-  useEffect(() => {
-    if (selectedSession === null && defaultSession !== null) {
-      setSelectedSession(defaultSession);
-    }
-  }, [defaultSession, selectedSession]);
-
-  const session = selectedSession;
+  const session = userPickedSession ?? defaultSession;
   const sessionKey = session?.session_key ?? null;
 
   // isLive must be derived before the data hooks so they can use it to decide
   // whether to keep polling (live) or stop after the initial fetch (historical).
   const isLive = deriveIsLive(session);
 
-  // ── 2. Data hooks (all pause when sessionKey is null) ──────────────────────
-  const { drivers } = useDrivers(sessionKey);
+  // ── Staggered session keys — prevents startup burst over rate limit ─────────
+  //
+  // When sessionKey first becomes non-null, every hook fires simultaneously.
+  // That's 7 concurrent requests — just over the 6 req/s sponsor-tier limit —
+  // causing a 429 which fetchWithRetry backs off for 60 s.
+  //
+  // Solution: three priority tiers, each gets the session key with a small delay.
+  //   Tier 1 (immediate):  drivers + positions/intervals — needed for leaderboard
+  //   Tier 2 (+200 ms):    stints + location stream     — tires and track map
+  //   Tier 3 (+400 ms):    laps + race control          — scrubber and flags
+  //
+  // Max concurrent requests per window: 3 at t=0, 2 at t+200ms, 2 at t+400ms.
+  // Stays comfortably within 6 req/s · 60 req/min (OpenF1 sponsor tier).
+  const [tier2Key, setTier2Key] = useState<number | null>(null);
+  const [tier3Key, setTier3Key] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (sessionKey === null) {
+      setTier2Key(null);
+      setTier3Key(null);
+      return;
+    }
+    const t2 = setTimeout(() => setTier2Key(sessionKey), 200);
+    const t3 = setTimeout(() => setTier3Key(sessionKey), 400);
+    return () => {
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, [sessionKey]);
+
+  // ── 2. Data hooks (all pause when their session key is null) ───────────────
+  const { drivers } = useDrivers(sessionKey); // Tier 1 — immediate
   const {
     positions: positionsMap,
     intervals,
     allPositions,
     allIntervals,
-  } = usePositions(sessionKey, isLive);
-  const { locations: streamLocations } = useLocationStream(sessionKey, isLive);
-  const { stints: stintsArray } = useStints(sessionKey, isLive);
-  const { laps, totalLaps } = useLaps(sessionKey);
-  const { messages } = useRaceControl(sessionKey, isLive);
+  } = usePositions(sessionKey, isLive); // Tier 1 — immediate
+  const { locations: streamLocations } = useLocationStream(tier2Key, isLive); // Tier 2 — +400ms
+  const { stints: stintsArray } = useStints(tier2Key, isLive); // Tier 2 — +400ms
+  const { laps, totalLaps } = useLaps(tier3Key); // Tier 3 — +800ms
+  const { messages } = useRaceControl(tier3Key, isLive); // Tier 3 — +800ms
 
   // ── 3. Replay scrubber state ───────────────────────────────────────────────
 
@@ -205,7 +235,8 @@ export default function App() {
           <span style={styles.errorMessage}>{sessionError.message}</span>
           {isRateLimit && (
             <span style={styles.errorHint}>
-              OpenF1 free tier: max 3 req/s · 30 req/min. Refresh in a moment.
+              OpenF1 sponsor tier: max 6 req/s · 60 req/min. Refresh in a
+              moment.
             </span>
           )}
         </div>
@@ -272,7 +303,7 @@ export default function App() {
         isLive={isLive}
         messages={messages}
         sessions={sessions}
-        onSessionChange={setSelectedSession}
+        onSessionChange={setUserPickedSession}
       />
 
       {/* ── Two-panel body ─────────────────────────────────────────────────── */}
