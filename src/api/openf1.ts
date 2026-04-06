@@ -420,7 +420,11 @@ export async function getRaceControlFromApi(
   const res = await fetch(`/api/race-control?${params.toString()}`);
   if (!res.ok) {
     const message = await res.text().catch(() => res.statusText);
-    const err: ApiError = { status: res.status, message };
+    const err: ApiError = {
+      status: res.status,
+      message,
+      isRateLimit: res.status === 429,
+    };
     throw err;
   }
   return res.json() as Promise<RaceControl[]>;

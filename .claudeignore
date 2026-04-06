@@ -7,3 +7,4 @@ build/
 coverage/
 .env
 *.lock
+.env.*

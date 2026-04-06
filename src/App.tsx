@@ -321,7 +321,7 @@ export default function App() {
           {session !== null ? (
             <TrackMap
               circuitKey={session.circuit_key}
-              year={session.year}
+              year={session.year ?? new Date(session.date_start).getFullYear()}
               drivers={drivers}
               locations={displayLocations}
               isLive={isLive}

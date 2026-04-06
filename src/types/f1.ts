@@ -11,7 +11,7 @@ export interface Session {
   // Fields present in OpenF1 responses but not in the backend /api/sessions endpoint:
   circuit_short_name?: string;
   country_name?: string;
-  year?: number;
+  year?: number; // derived from date_start when absent — use session.year ?? new Date(session.date_start).getFullYear()
   location?: string;
 }
 

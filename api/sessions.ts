@@ -37,7 +37,7 @@ export default async function handler(
   const { data, error } = await supabase
     .from("sessions")
     .select(
-      "session_key, session_name, session_type, date_start, date_end, circuit_key, meeting_key",
+      "session_key, session_name, session_type, date_start, date_end, circuit_key, year, circuit_short_name, country_name, location",
     )
     .gte("date_start", yearStart)
     .lt("date_start", yearEnd)
