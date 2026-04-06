@@ -4,7 +4,12 @@
  * no Bearer token. Data is always returned ordered by `date` ascending.
  */
 
-import type { Position, Interval, ApiError } from "../types/f1";
+import type {
+  Position,
+  Interval,
+  LiveSessionResponse,
+  ApiError,
+} from "../types/f1";
 import { emitApiEvent } from "../utils/apiEvents";
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
@@ -82,4 +87,21 @@ export async function getBackendIntervals(
   }
   const res = await backendFetch(`/api/intervals?${params.toString()}`);
   return handleResponse<Interval[]>(res);
+}
+
+// ─── Live session ─────────────────────────────────────────────────────────────
+
+/**
+ * Fetches the live race snapshot from `GET /api/live?session_key=<key>`.
+ *
+ * Returns `{ live: false }` when the current time is outside the session
+ * window (date_start … date_end + 2 h) — the hook should stop polling.
+ * Returns the full snapshot when in-window.
+ */
+export async function getLiveSession(
+  sessionKey: number,
+): Promise<LiveSessionResponse> {
+  const params = new URLSearchParams({ session_key: String(sessionKey) });
+  const res = await backendFetch(`/api/live?${params.toString()}`);
+  return handleResponse<LiveSessionResponse>(res);
 }

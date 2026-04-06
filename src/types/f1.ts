@@ -121,6 +121,24 @@ export interface Lap {
   session_key: number;
 }
 
+// ─── Live session proxy ───────────────────────────────────────────────────────
+
+/**
+ * Shape returned by GET /api/live?session_key=<key>.
+ * When `live` is false the session window has not started or has already ended
+ * (date_end + 2 h) — callers should stop polling.
+ */
+export type LiveSessionResponse =
+  | { live: false }
+  | {
+      live: true;
+      positions: Position[];
+      intervals: Interval[];
+      locations: Location[];
+      stints: Stint[];
+      raceControl: RaceControl[];
+    };
+
 // ─── Token proxy ─────────────────────────────────────────────────────────────
 
 export interface TokenProxyResponse {
