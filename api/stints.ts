@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import type { Stint } from "../src/types/f1.ts";
-import { checkRateLimit, clientIp } from "./_rateLimit";
+import { checkRateLimit, clientIp } from "../lib/rateLimit";
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
