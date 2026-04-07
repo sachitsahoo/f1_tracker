@@ -1,39 +1,10 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { checkRateLimit, clientIp } from "./_rateLimit";
 
 // ─── Module-level token cache (persists across warm invocations) ──────────────
 
 let cachedToken: string | null = null;
 let tokenExpiresAt = 0; // Date.now() + 3500 * 1000
-
-// ─── IP rate limiting ─────────────────────────────────────────────────────────
-
-interface IpRecord {
-  count: number;
-  windowStart: number;
-}
-
-const ipLog = new Map<string, IpRecord>();
-const RATE_MAX = 10;
-const RATE_WINDOW_MS = 60_000;
-
-function isRateLimited(ip: string): boolean {
-  const now = Date.now();
-  const rec = ipLog.get(ip);
-
-  if (!rec || now - rec.windowStart > RATE_WINDOW_MS) {
-    ipLog.set(ip, { count: 1, windowStart: now });
-    return false;
-  }
-
-  rec.count += 1;
-  return rec.count > RATE_MAX;
-}
-
-function clientIp(req: VercelRequest): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  if (typeof forwarded === "string") return forwarded.split(",")[0].trim();
-  return req.socket?.remoteAddress ?? "unknown";
-}
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
@@ -49,8 +20,7 @@ export default async function handler(
 
   res.setHeader("Cache-Control", "no-store");
 
-  const ip = clientIp(req);
-  if (isRateLimited(ip)) {
+  if (checkRateLimit(clientIp(req), "token")) {
     res.status(429).json({ error: "Too many requests" });
     return;
   }

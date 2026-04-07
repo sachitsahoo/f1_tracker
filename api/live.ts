@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit, clientIp } from "./_rateLimit";
 import type {
   Position,
   Interval,
@@ -68,6 +69,11 @@ export default async function handler(
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
     res.status(405).json({ error: "Method not allowed" });
+    return;
+  }
+
+  if (checkRateLimit(clientIp(req), "data")) {
+    res.status(429).json({ error: "Too many requests" });
     return;
   }
 

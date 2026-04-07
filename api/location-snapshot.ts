@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import type { Location } from "../src/types/f1.ts";
+import { checkRateLimit, clientIp, isValidIsoDate } from "./_rateLimit";
 
 // ─── Module-level caches (persist across warm Fluid Compute invocations) ──────
 
@@ -78,6 +79,11 @@ export default async function handler(
     return;
   }
 
+  if (checkRateLimit(clientIp(req), "data")) {
+    res.status(429).json({ error: "Too many requests" });
+    return;
+  }
+
   // ── Validate session_key ────────────────────────────────────────────────────
 
   const rawSessionKey = req.query["session_key"];
@@ -94,12 +100,25 @@ export default async function handler(
     return;
   }
 
-  // ── Optional date bounds ────────────────────────────────────────────────────
+  // ── Optional date bounds — validate ISO 8601 format before URL interpolation ─
 
   const rawDateGt = req.query["date_gt"];
   const rawDateLt = req.query["date_lt"];
   const dateGt = typeof rawDateGt === "string" ? rawDateGt : "";
   const dateLt = typeof rawDateLt === "string" ? rawDateLt : "";
+
+  if (dateGt && !isValidIsoDate(dateGt)) {
+    res
+      .status(400)
+      .json({ error: "date_gt must be a valid ISO 8601 datetime" });
+    return;
+  }
+  if (dateLt && !isValidIsoDate(dateLt)) {
+    res
+      .status(400)
+      .json({ error: "date_lt must be a valid ISO 8601 datetime" });
+    return;
+  }
 
   // ── Cache lookup ────────────────────────────────────────────────────────────
   // Deterministic key: same session + same lap boundary → same timestamps →

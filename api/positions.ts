@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit, clientIp, parsePositiveInt } from "./_rateLimit";
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
@@ -13,41 +14,32 @@ export default async function handler(
     return;
   }
 
-  // ── Validate required query params ─────────────────────────────────────────
-
-  const { session_key, driver_number } = req.query;
-
-  if (!session_key || typeof session_key !== "string") {
-    res
-      .status(400)
-      .json({ error: "Missing required query parameter: session_key" });
+  if (checkRateLimit(clientIp(req), "data")) {
+    res.status(429).json({ error: "Too many requests" });
     return;
   }
 
-  const parsedSessionKey = parseInt(session_key, 10);
-  if (isNaN(parsedSessionKey)) {
-    res.status(400).json({ error: "Invalid session_key: must be an integer" });
+  // ── Validate query params ───────────────────────────────────────────────────
+
+  const sessionKeyNum = parsePositiveInt(req.query["session_key"]);
+  if (sessionKeyNum === null) {
+    res.status(400).json({ error: "session_key must be a positive integer" });
     return;
   }
 
-  let parsedDriverNumber: number | null = null;
+  const { driver_number } = req.query;
+  let driverNumberNum: number | null = null;
   if (driver_number !== undefined) {
-    if (typeof driver_number !== "string") {
+    driverNumberNum = parsePositiveInt(driver_number);
+    if (driverNumberNum === null) {
       res
         .status(400)
-        .json({ error: "Invalid driver_number: must be a single value" });
-      return;
-    }
-    parsedDriverNumber = parseInt(driver_number, 10);
-    if (isNaN(parsedDriverNumber)) {
-      res
-        .status(400)
-        .json({ error: "Invalid driver_number: must be an integer" });
+        .json({ error: "driver_number must be a positive integer" });
       return;
     }
   }
 
-  // ── Validate environment ────────────────────────────────────────────────────
+  // ── Env validation ──────────────────────────────────────────────────────────
 
   const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = process.env;
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -55,7 +47,7 @@ export default async function handler(
     return;
   }
 
-  // ── Query Supabase ──────────────────────────────────────────────────────────
+  // ── Supabase query ──────────────────────────────────────────────────────────
 
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -63,25 +55,26 @@ export default async function handler(
     let query = supabase
       .from("positions")
       .select("driver_number, date, position, session_key")
-      .eq("session_key", parsedSessionKey)
+      .eq("session_key", sessionKeyNum)
       .order("date", { ascending: true });
 
-    if (parsedDriverNumber !== null) {
-      query = query.eq("driver_number", parsedDriverNumber);
+    if (driverNumberNum !== null) {
+      query = query.eq("driver_number", driverNumberNum);
     }
 
     const { data, error } = await query;
 
     if (error) {
-      res.status(500).json({ error: error.message });
+      console.error("[/api/positions] Supabase error:", error.message);
+      res.status(500).json({ error: "Database query failed" });
       return;
     }
 
     res.setHeader("Cache-Control", "no-store");
     res.status(200).json(data);
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Unexpected server error";
-    res.status(500).json({ error: message });
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[/api/positions] Unexpected error:", message);
+    res.status(500).json({ error: "Internal server error" });
   }
 }
