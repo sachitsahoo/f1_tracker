@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { checkRateLimit, clientIp } from "./_shared";
 import { createClient } from "@supabase/supabase-js";
-import { checkRateLimit, clientIp } from "../lib/rateLimit";
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
