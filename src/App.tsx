@@ -1,6 +1,13 @@
 import React, { useMemo, useState, useEffect } from "react";
 
-import type { Position, Interval, Session, Stint, Lap } from "./types/f1";
+import type {
+  Position,
+  Interval,
+  Location,
+  Session,
+  Stint,
+  Lap,
+} from "./types/f1";
 import { useSessions } from "./hooks/useSessions";
 import { useDrivers } from "./hooks/useDrivers";
 import { usePositions } from "./hooks/usePositions";
@@ -191,6 +198,32 @@ export default function App() {
     return latestPerDriver(allIntervals.filter((i) => i.date <= replayCutoff));
   }, [replayCutoff, intervals, allIntervals]);
 
+  // Retired driver numbers — derived from race control "RETIRED" messages.
+  // Used to remove dots from the track map and push rows to the DNF section.
+  const retiredDriverNumbers = useMemo<Set<number>>(() => {
+    const s = new Set<number>();
+    for (const msg of messages) {
+      if (
+        msg.driver_number != null &&
+        msg.message.toUpperCase().includes("RETIRED")
+      ) {
+        s.add(msg.driver_number);
+      }
+    }
+    return s;
+  }, [messages]);
+
+  // Strip retired drivers from the location map so their dots vanish from
+  // the track — no frozen ghost car sitting at the crash site.
+  const filteredLocations = useMemo<Record<number, Location>>(() => {
+    if (retiredDriverNumbers.size === 0) return displayLocations;
+    const out: Record<number, Location> = {};
+    for (const [k, loc] of Object.entries(displayLocations)) {
+      if (!retiredDriverNumbers.has(Number(k))) out[Number(k)] = loc;
+    }
+    return out;
+  }, [displayLocations, retiredDriverNumbers]);
+
   // Position[] sorted ascending (P1 first) — Leaderboard expects an array
   const sortedPositions: Position[] = useMemo(
     () =>
@@ -329,7 +362,7 @@ export default function App() {
               circuitKey={session.circuit_key}
               year={session.year ?? new Date(session.date_start).getFullYear()}
               drivers={drivers}
-              locations={displayLocations}
+              locations={filteredLocations}
               isLive={isLive}
             />
           ) : (
@@ -357,6 +390,7 @@ export default function App() {
             currentLap={!isLive ? replayLap : null}
             totalLaps={totalLaps}
             isLive={isLive}
+            retiredDrivers={retiredDriverNumbers}
           />
         </div>
       </div>

@@ -230,6 +230,12 @@ export interface LeaderboardProps {
    * Comes from useLaps(). Used to display last lap time.
    */
   laps: Record<number, Lap>;
+  /**
+   * Driver numbers that have retired or DNF'd this session.
+   * Rows shown dimmed at the bottom of the leaderboard with a "DNF" marker.
+   * Derived from RaceControl messages containing "RETIRED".
+   */
+  retiredDrivers?: Set<number>;
   /** Current lap number in the race. Null when unknown or off-season. */
   currentLap: number | null;
   /** Total scheduled race laps. Null when unknown. */

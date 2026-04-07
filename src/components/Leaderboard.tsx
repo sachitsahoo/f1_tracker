@@ -265,6 +265,7 @@ export default function Leaderboard({
   currentLap,
   totalLaps,
   isLive,
+  retiredDrivers,
 }: LeaderboardProps) {
   // Build O(1) lookup maps — avoids Array.find() inside the render loop
   const driverMap = new Map<number, Driver>(
@@ -273,6 +274,14 @@ export default function Leaderboard({
   const intervalMap: Record<number, Interval> = intervals;
   const stintMap: Record<number, Stint> = stints;
   const lapMap: Record<number, Lap> = laps;
+
+  // Split into running and retired groups
+  const activePositions = retiredDrivers
+    ? positions.filter((p) => !retiredDrivers.has(p.driver_number))
+    : positions;
+  const dnfPositions = retiredDrivers
+    ? positions.filter((p) => retiredDrivers.has(p.driver_number))
+    : [];
 
   return (
     <div style={styles.container}>
@@ -320,107 +329,203 @@ export default function Leaderboard({
           // Once positions arrive the skeleton is replaced by real rows.
           <LeaderboardSkeleton />
         ) : (
-          positions.map((pos) => {
-            const driver = driverMap.get(pos.driver_number);
-            const interval = intervalMap[pos.driver_number];
-            const stint = stintMap[pos.driver_number];
-            const lap = lapMap[pos.driver_number];
-            const isFirst = pos.position === 1;
+          <>
+            {activePositions.map((pos) => {
+              const driver = driverMap.get(pos.driver_number);
+              const interval = intervalMap[pos.driver_number];
+              const stint = stintMap[pos.driver_number];
+              const lap = lapMap[pos.driver_number];
+              const isFirst = pos.position === 1;
 
-            const teamColor = driver ? driverTeamColor(driver) : "#FFFFFF";
-            const abbrev = driver?.name_acronym ?? String(pos.driver_number);
-            const age = stint ? tireAge(stint, currentLap) : null;
+              const teamColor = driver ? driverTeamColor(driver) : "#FFFFFF";
+              const abbrev = driver?.name_acronym ?? String(pos.driver_number);
+              const age = stint ? tireAge(stint, currentLap) : null;
 
-            // Leader row gets a subtle team-color glow
-            const leaderGlow = isFirst
-              ? `inset 0 0 24px ${hexToRgba(teamColor, 0.07)}, inset 4px 0 0 ${teamColor}`
-              : undefined;
+              // Leader row gets a subtle team-color glow
+              const leaderGlow = isFirst
+                ? `inset 0 0 24px ${hexToRgba(teamColor, 0.07)}, inset 4px 0 0 ${teamColor}`
+                : undefined;
 
-            return (
-              <div
-                key={pos.driver_number}
-                style={{
-                  ...styles.row,
-                  borderLeft: `4px solid ${teamColor}`,
-                  ...(isFirst
-                    ? {
-                        ...styles.rowLeader,
-                        boxShadow: leaderGlow,
-                      }
-                    : {}),
-                }}
-                role="listitem"
-                aria-label={`P${pos.position} ${abbrev}`}
-              >
-                {/* Position number — large, muted */}
-                <span
+              return (
+                <div
+                  key={pos.driver_number}
                   style={{
-                    ...styles.colPos,
-                    ...styles.posNum,
-                    ...(isFirst ? styles.posNumLeader : {}),
-                  }}
-                >
-                  {pos.position}
-                </span>
-
-                {/* Driver abbreviation + nationality flag */}
-                <span style={{ ...styles.colDriver, ...styles.driverCell }}>
-                  {/* Country flag — falls back to acronym map when API returns null */}
-                  {(() => {
-                    const flag1x = getDriverFlagUrl(
-                      driver?.country_code,
-                      driver?.name_acronym,
-                      1,
-                    );
-                    const flag2x = getDriverFlagUrl(
-                      driver?.country_code,
-                      driver?.name_acronym,
-                      2,
-                    );
-                    return flag1x ? (
-                      <img
-                        className="f1-flag"
-                        src={flag1x}
-                        srcSet={`${flag1x} 1x, ${flag2x ?? flag1x} 2x`}
-                        alt={driver?.country_code ?? driver?.name_acronym ?? ""}
-                        title={
-                          driver?.country_code ?? driver?.name_acronym ?? ""
+                    ...styles.row,
+                    borderLeft: `4px solid ${teamColor}`,
+                    ...(isFirst
+                      ? {
+                          ...styles.rowLeader,
+                          boxShadow: leaderGlow,
                         }
-                        aria-hidden="true"
-                      />
-                    ) : (
-                      <span
-                        className="f1-flag-placeholder"
-                        aria-hidden="true"
-                      />
-                    );
-                  })()}
-                  <span style={styles.abbreviation}>{abbrev}</span>
-                </span>
-
-                {/* Gap to leader — monospace, tabular */}
-                <span
-                  style={{
-                    ...styles.colGap,
-                    ...styles.gapText,
-                    ...(isFirst ? styles.gapLeader : {}),
+                      : {}),
                   }}
+                  role="listitem"
+                  aria-label={`P${pos.position} ${abbrev}`}
                 >
-                  {formatGap(interval?.gap_to_leader ?? null, pos.position)}
-                </span>
+                  {/* Position number — large, muted */}
+                  <span
+                    style={{
+                      ...styles.colPos,
+                      ...styles.posNum,
+                      ...(isFirst ? styles.posNumLeader : {}),
+                    }}
+                  >
+                    {pos.position}
+                  </span>
 
-                {/* Tire compound circle + age */}
-                <span style={styles.colTire}>
-                  <TireBadge compound={stint?.compound} age={age} />
-                </span>
+                  {/* Driver abbreviation + nationality flag */}
+                  <span style={{ ...styles.colDriver, ...styles.driverCell }}>
+                    {/* Country flag — falls back to acronym map when API returns null */}
+                    {(() => {
+                      const flag1x = getDriverFlagUrl(
+                        driver?.country_code,
+                        driver?.name_acronym,
+                        1,
+                      );
+                      const flag2x = getDriverFlagUrl(
+                        driver?.country_code,
+                        driver?.name_acronym,
+                        2,
+                      );
+                      return flag1x ? (
+                        <img
+                          className="f1-flag"
+                          src={flag1x}
+                          srcSet={`${flag1x} 1x, ${flag2x ?? flag1x} 2x`}
+                          alt={
+                            driver?.country_code ?? driver?.name_acronym ?? ""
+                          }
+                          title={
+                            driver?.country_code ?? driver?.name_acronym ?? ""
+                          }
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <span
+                          className="f1-flag-placeholder"
+                          aria-hidden="true"
+                        />
+                      );
+                    })()}
+                    <span style={styles.abbreviation}>{abbrev}</span>
+                  </span>
 
-                {/* Last lap time — monospace, tabular */}
-                <span style={{ ...styles.colLap, ...styles.lapTime }}>
-                  {formatLapTime(lap?.lap_duration ?? null)}
-                </span>
-              </div>
-            );
-          })
+                  {/* Gap to leader — monospace, tabular */}
+                  <span
+                    style={{
+                      ...styles.colGap,
+                      ...styles.gapText,
+                      ...(isFirst ? styles.gapLeader : {}),
+                    }}
+                  >
+                    {formatGap(interval?.gap_to_leader ?? null, pos.position)}
+                  </span>
+
+                  {/* Tire compound circle + age */}
+                  <span style={styles.colTire}>
+                    <TireBadge compound={stint?.compound} age={age} />
+                  </span>
+
+                  {/* Last lap time — monospace, tabular */}
+                  <span style={{ ...styles.colLap, ...styles.lapTime }}>
+                    {formatLapTime(lap?.lap_duration ?? null)}
+                  </span>
+                </div>
+              );
+            })}
+
+            {/* ── DNF / Retired rows ───────────────────────────────────────── */}
+            {dnfPositions.map((pos) => {
+              const driver = driverMap.get(pos.driver_number);
+              const stint = stintMap[pos.driver_number];
+              const lap = lapMap[pos.driver_number];
+
+              const teamColor = driver ? driverTeamColor(driver) : "#555555";
+              const abbrev = driver?.name_acronym ?? String(pos.driver_number);
+              const age = stint ? tireAge(stint, currentLap) : null;
+
+              return (
+                <div
+                  key={pos.driver_number}
+                  style={{
+                    ...styles.row,
+                    borderLeft: `4px solid ${teamColor}`,
+                    opacity: 0.45,
+                  }}
+                  role="listitem"
+                  aria-label={`DNF ${abbrev}`}
+                >
+                  {/* DNF marker in place of position number */}
+                  <span
+                    style={{
+                      ...styles.colPos,
+                      ...styles.posNum,
+                      ...styles.dnfLabel,
+                    }}
+                  >
+                    DNF
+                  </span>
+
+                  {/* Driver abbreviation + nationality flag */}
+                  <span style={{ ...styles.colDriver, ...styles.driverCell }}>
+                    {(() => {
+                      const flag1x = getDriverFlagUrl(
+                        driver?.country_code,
+                        driver?.name_acronym,
+                        1,
+                      );
+                      const flag2x = getDriverFlagUrl(
+                        driver?.country_code,
+                        driver?.name_acronym,
+                        2,
+                      );
+                      return flag1x ? (
+                        <img
+                          className="f1-flag"
+                          src={flag1x}
+                          srcSet={`${flag1x} 1x, ${flag2x ?? flag1x} 2x`}
+                          alt={
+                            driver?.country_code ?? driver?.name_acronym ?? ""
+                          }
+                          title={
+                            driver?.country_code ?? driver?.name_acronym ?? ""
+                          }
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <span
+                          className="f1-flag-placeholder"
+                          aria-hidden="true"
+                        />
+                      );
+                    })()}
+                    <span style={styles.abbreviation}>{abbrev}</span>
+                  </span>
+
+                  {/* Gap replaced with OUT */}
+                  <span
+                    style={{
+                      ...styles.colGap,
+                      ...styles.gapText,
+                      ...styles.dnfOut,
+                    }}
+                  >
+                    OUT
+                  </span>
+
+                  {/* Tire compound circle + age */}
+                  <span style={styles.colTire}>
+                    <TireBadge compound={stint?.compound} age={age} />
+                  </span>
+
+                  {/* Last lap time — monospace, tabular */}
+                  <span style={{ ...styles.colLap, ...styles.lapTime }}>
+                    {formatLapTime(lap?.lap_duration ?? null)}
+                  </span>
+                </div>
+              );
+            })}
+          </>
         )}
       </div>
     </div>
@@ -623,6 +728,21 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#BBBBBB",
     fontVariantNumeric: "tabular-nums",
     letterSpacing: "0.02em",
+  },
+
+  // ── DNF label — red, small, in place of position number
+  dnfLabel: {
+    fontSize: "10px",
+    color: "#E8002D",
+    fontWeight: 900,
+    letterSpacing: "0.06em",
+  },
+  // ── DNF gap — "OUT" text
+  dnfOut: {
+    color: "#E8002D",
+    fontWeight: 700,
+    fontSize: "10px",
+    letterSpacing: "0.08em",
   },
 
   // ── Empty / error state
