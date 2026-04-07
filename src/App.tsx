@@ -136,7 +136,13 @@ export default function App() {
     allPositions,
     allIntervals,
   } = usePositions(sessionKey, isLive); // Tier 1 — immediate
-  const { locations: streamLocations } = useLocationStream(tier2Key, isLive); // Tier 2 — +400ms
+  // Only feed useLocationStream a session key when we are actually live.
+  // In replay mode the stream hook is fully idle — it would otherwise fire an
+  // initial seed request directly to OpenF1 and trigger rate-limit toasts.
+  const { locations: streamLocations } = useLocationStream(
+    isLive ? tier2Key : null,
+    isLive,
+  ); // Tier 2 — +400ms
   const { stints: stintsArray } = useStints(tier2Key, isLive); // Tier 2 — +400ms
   const { laps, totalLaps } = useLaps(tier3Key); // Tier 3 — +800ms
   const { messages } = useRaceControl(tier3Key, isLive); // Tier 3 — +800ms
@@ -160,8 +166,9 @@ export default function App() {
     return lapCutoffDate(laps, replayLap);
   }, [isLive, laps, replayLap, totalLaps]);
 
-  // Location snapshot — fetches a 30-second window of X/Y data ending at
-  // replayCutoff. Debounced 250 ms so rapid slider drags don't hammer the API.
+  // Location snapshot — fetches a 30-second window of X/Y data from OpenF1
+  // ending at replayCutoff (= exact lap boundary timestamp). Debounced 250 ms
+  // so rapid slider drags don't hammer the API.
   // Inactive when replayCutoff is null (live session or scrubber at final lap).
   const { locations: snapshotLocations } = useLocationSnapshot(
     sessionKey,

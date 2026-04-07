@@ -114,6 +114,14 @@ export default defineConfig({
         target: "http://localhost:3000",
         changeOrigin: true,
       },
+      // /api/location-snapshot is a Vercel function (server-side caching proxy
+      // to OpenF1). Under `vercel dev` it is served automatically. Under
+      // `npm run dev` this proxy forwards the request to the Vercel dev server
+      // running on port 3000.
+      "/api/location-snapshot": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
     },
   },
 });

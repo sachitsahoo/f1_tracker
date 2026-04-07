@@ -7,6 +7,7 @@
 import type {
   Position,
   Interval,
+  Location,
   LiveSessionResponse,
   ApiError,
 } from "../types/f1";
@@ -87,6 +88,53 @@ export async function getBackendIntervals(
   }
   const res = await backendFetch(`/api/intervals?${params.toString()}`);
   return handleResponse<Interval[]>(res);
+}
+
+// ─── Locations ────────────────────────────────────────────────────────────────
+
+/**
+ * Fetches the stored location snapshot for a single lap from the backend
+ * `GET /api/locations?session_key=<key>&lap_number=<lap>`.
+ *
+ * The database holds one X/Y/Z record per driver per lap (not the raw 3.7 Hz
+ * stream), so this returns at most 20 rows — one per driver on the grid.
+ *
+ * Use this for replay mode only. Live mode uses useLocationStream which reads
+ * directly from OpenF1 in real-time.
+ */
+export async function getBackendLocations(
+  sessionKey: number,
+  lapNumber: number,
+): Promise<Location[]> {
+  const params = new URLSearchParams({
+    session_key: String(sessionKey),
+    lap_number: String(lapNumber),
+  });
+  const res = await backendFetch(`/api/locations?${params.toString()}`);
+  return handleResponse<Location[]>(res);
+}
+
+/**
+ * Fetches a date-windowed location snapshot via the server-side caching proxy
+ * at `GET /api/location-snapshot`.
+ *
+ * The server fetches from OpenF1 on the first miss and caches the result
+ * indefinitely — historical telemetry is immutable. All subsequent requests
+ * for the same (session_key, date_gt, date_lt) are served from the cache,
+ * so N users scrubbing the same replay lap cost exactly 1 OpenF1 request.
+ */
+export async function getLocationSnapshot(
+  sessionKey: number,
+  dateGt: string,
+  dateLt: string,
+): Promise<Location[]> {
+  const params = new URLSearchParams({
+    session_key: String(sessionKey),
+    date_gt: dateGt,
+    date_lt: dateLt,
+  });
+  const res = await backendFetch(`/api/location-snapshot?${params.toString()}`);
+  return handleResponse<Location[]>(res);
 }
 
 // ─── Live session ─────────────────────────────────────────────────────────────

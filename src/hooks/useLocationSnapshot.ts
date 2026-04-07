@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getLocations } from "../api/openf1";
+import { getLocationSnapshot } from "../api/backend";
 import type { Location } from "../types/f1";
 
 /** Milliseconds to wait after the last scrub event before firing the fetch. */
@@ -18,7 +18,11 @@ export interface UseLocationSnapshotResult {
 }
 
 /**
- * Fetches a snapshot of driver locations just before `atDate`.
+ * Fetches a snapshot of driver locations just before `atDate` from OpenF1.
+ *
+ * Uses a 30-second window ending at `atDate` so we get the exact position
+ * of every car right at the lap boundary — much more precise than a single
+ * midpoint snapshot from the DB.
  *
  * When `atDate` changes the fetch is debounced by 250 ms so rapid slider
  * drags do not hammer the OpenF1 API. Only the most recent location per
@@ -59,13 +63,10 @@ export function useLocationSnapshot(
       const atMs = new Date(atDate).getTime();
       const windowStartMs = atMs - WINDOW_SECONDS * 1_000;
 
-      // Explicitly sort so date_gt is always the earlier bound and
-      // date_lt is always the later bound. Prevents inverted windows
-      // if atDate is ever computed incorrectly upstream.
       const earlier = new Date(Math.min(windowStartMs, atMs)).toISOString();
       const later = new Date(Math.max(windowStartMs, atMs)).toISOString();
 
-      getLocations(sessionKey, earlier, later)
+      getLocationSnapshot(sessionKey, earlier, later)
         .then((batch) => {
           // Reduce to the most recent record per driver within the window
           const map: Record<number, Location> = {};
