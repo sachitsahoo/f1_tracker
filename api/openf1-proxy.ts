@@ -24,7 +24,7 @@
  */
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { checkRateLimit, clientIp } from "../../lib/shared.js";
+import { checkRateLimit, clientIp } from "../lib/shared.js";
 
 const OPENF1_BASE = "https://api.openf1.org/v1";
 const OPENF1_TOKEN_URL = "https://api.openf1.org/token";
