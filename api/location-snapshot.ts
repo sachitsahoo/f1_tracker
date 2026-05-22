@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { checkRateLimit, clientIp, isValidIsoDate } from "./_shared";
+import { checkRateLimit, clientIp, isValidIsoDate } from "../lib/shared";
 import type { Location } from "../src/types/f1.ts";
 
 // ─── Module-level caches (persist across warm Fluid Compute invocations) ──────
