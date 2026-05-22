@@ -151,6 +151,23 @@ class CancelledSessionError extends Error {
   }
 }
 
+/**
+ * Thrown when an OpenF1 endpoint OTHER than /drivers returns 404 — meaning
+ * the session has partial data (drivers exist, so the race wasn't cancelled,
+ * but e.g. /position hasn't been backfilled yet). The seedSession transaction
+ * should be rolled back and the session NOT marked as processed, so the next
+ * cron run retries once OpenF1 has ingested the missing data.
+ */
+class PartialDataError extends Error {
+  constructor(
+    sessionKey: number,
+    public readonly endpoint: string,
+  ) {
+    super(`session ${sessionKey} partial data — ${endpoint} returned 404`);
+    this.name = "PartialDataError";
+  }
+}
+
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -191,6 +208,28 @@ async function openf1Get<T>(path: string, retryOn401 = true): Promise<T> {
   }
 
   return res.json() as Promise<T>;
+}
+
+/**
+ * Wrapper around openf1Get that converts a 404 into PartialDataError so the
+ * caller can distinguish "session not yet fully ingested by OpenF1" from a
+ * real error. Used by every endpoint EXCEPT /drivers (where 404 means the
+ * session was cancelled outright).
+ */
+async function openf1GetOrPartial<T>(
+  sessionKey: number,
+  endpoint: string,
+  path: string,
+): Promise<T> {
+  try {
+    return await openf1Get<T>(path);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("HTTP 404")) {
+      throw new PartialDataError(sessionKey, endpoint);
+    }
+    throw err;
+  }
 }
 
 /**
@@ -543,7 +582,9 @@ async function seedPositions(
   client: PoolClient,
   sessionKey: number,
 ): Promise<number> {
-  const data = await openf1Get<Position[]>(
+  const data = await openf1GetOrPartial<Position[]>(
+    sessionKey,
+    "position",
     `/position?session_key=${sessionKey}`,
   );
 
@@ -560,7 +601,9 @@ async function seedIntervals(
   client: PoolClient,
   sessionKey: number,
 ): Promise<number> {
-  const data = await openf1Get<Interval[]>(
+  const data = await openf1GetOrPartial<Interval[]>(
+    sessionKey,
+    "intervals",
     `/intervals?session_key=${sessionKey}`,
   );
 
@@ -597,7 +640,9 @@ async function seedRaceControl(
   client: PoolClient,
   sessionKey: number,
 ): Promise<number> {
-  const data = await openf1Get<RaceControl[]>(
+  const data = await openf1GetOrPartial<RaceControl[]>(
+    sessionKey,
+    "race_control",
     `/race_control?session_key=${sessionKey}`,
   );
 
@@ -632,7 +677,11 @@ async function seedStints(
   client: PoolClient,
   sessionKey: number,
 ): Promise<number> {
-  const data = await openf1Get<Stint[]>(`/stints?session_key=${sessionKey}`);
+  const data = await openf1GetOrPartial<Stint[]>(
+    sessionKey,
+    "stints",
+    `/stints?session_key=${sessionKey}`,
+  );
 
   return bulkInsert(
     client,
@@ -666,7 +715,11 @@ async function seedLaps(
   client: PoolClient,
   sessionKey: number,
 ): Promise<Lap[]> {
-  const data = await openf1Get<Lap[]>(`/laps?session_key=${sessionKey}`);
+  const data = await openf1GetOrPartial<Lap[]>(
+    sessionKey,
+    "laps",
+    `/laps?session_key=${sessionKey}`,
+  );
 
   await bulkInsert(
     client,
@@ -739,7 +792,9 @@ async function seedLocationSnapshots(
 
   for (const [driverNumber, driverLaps] of lapsByDriver) {
     // One API call per driver — full location history for this session
-    const locations = await openf1Get<Location[]>(
+    const locations = await openf1GetOrPartial<Location[]>(
+      sessionKey,
+      "location",
       `/location?session_key=${sessionKey}&driver_number=${driverNumber}`,
     );
 
@@ -908,6 +963,18 @@ async function seedSession(
         `  ⚠  Session ${session.session_key} skipped — cancelled event (${session.year} ${session.country_name})`,
       );
       return; // not a failure — don't add to the failed list
+    }
+
+    if (err instanceof PartialDataError) {
+      // OpenF1 has drivers for this session but not yet the dependent
+      // telemetry/results endpoint. The transaction is already rolled back
+      // above, and we deliberately do NOT insert the sessions row — that
+      // way the next cron run will re-attempt the session once OpenF1
+      // finishes ingesting it. Counted as a soft skip, not a failure.
+      console.log(
+        `  ⏸  Session ${session.session_key} skipped — partial data on ${err.endpoint} (${session.year} ${session.country_name}); will retry next run`,
+      );
+      return;
     }
 
     throw err; // re-throw unexpected errors so main() can log and continue
