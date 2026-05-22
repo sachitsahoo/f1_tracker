@@ -94,15 +94,31 @@ export default async function handler(
   }
 
   // ── Build upstream URL ─────────────────────────────────────────────────────
-  // req.url is e.g. "/api/openf1/sessions?year=2026" — strip the prefix and
-  // re-join the rest onto https://api.openf1.org/v1.
-  const incoming = req.url ?? "";
-  const stripped = incoming.replace(/^\/api\/openf1/, "");
-  if (!stripped || stripped === "/") {
+  // Wired via the vercel.json rewrite:
+  //   /api/openf1/:path*  →  /api/openf1-proxy?path=:path*
+  // After the rewrite this handler sees req.query.path = the OpenF1 path
+  // segments (joined by /) and all OTHER query params (year, session_key,
+  // date_gt, …) preserved alongside.
+  const pathParam = req.query["path"];
+  const pathStr = Array.isArray(pathParam) ? pathParam.join("/") : pathParam;
+  if (typeof pathStr !== "string" || pathStr.length === 0) {
     res.status(400).json({ error: "Missing OpenF1 path" });
     return;
   }
-  const upstream = `${OPENF1_BASE}${stripped}`;
+
+  // Rebuild the query string for OpenF1 from every param except "path".
+  // OpenF1 expects literal > and < (not URL-encoded) in date_gt / date_lt.
+  const upstreamQuery = new URLSearchParams();
+  for (const [k, v] of Object.entries(req.query)) {
+    if (k === "path") continue;
+    if (typeof v === "string") upstreamQuery.append(k, v);
+    else if (Array.isArray(v)) for (const s of v) upstreamQuery.append(k, s);
+  }
+  const qs = upstreamQuery
+    .toString()
+    .replace(/%3E/gi, ">")
+    .replace(/%3C/gi, "<");
+  const upstream = `${OPENF1_BASE}/${pathStr}${qs ? `?${qs}` : ""}`;
 
   // ── Auth ───────────────────────────────────────────────────────────────────
   let token = await getToken();
