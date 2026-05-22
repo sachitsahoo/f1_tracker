@@ -7,6 +7,7 @@ import type {
   Session,
   Stint,
   Lap,
+  RaceControl,
 } from "./types/f1";
 import { useSessions } from "./hooks/useSessions";
 import { useDrivers } from "./hooks/useDrivers";
@@ -198,20 +199,49 @@ export default function App() {
     return latestPerDriver(allIntervals.filter((i) => i.date <= replayCutoff));
   }, [replayCutoff, intervals, allIntervals]);
 
-  // Retired driver numbers — derived from race control "RETIRED" messages.
+  // Race control messages to display — same cutoff logic. In replay mode the
+  // status bar and timeline must show only messages that had occurred by the
+  // current scrubber lap; otherwise the bar stays pinned to the post-race
+  // chequered-flag message no matter where you scrub.
+  const displayMessages = useMemo<RaceControl[]>(() => {
+    if (replayCutoff === null) return messages;
+    return messages.filter((m) => m.date <= replayCutoff);
+  }, [replayCutoff, messages]);
+
+  // Retired driver numbers — derived from race control messages.
   // Used to remove dots from the track map and push rows to the DNF section.
+  // Uses displayMessages so retirements only appear once the scrubber reaches
+  // the lap they happened on.
+  //
+  // OpenF1 race-control text is inconsistent: retirement rows can say
+  // "RETIRED", "RETIREMENT", "WITHDRAWN", "DISQUALIFIED", or describe a
+  // terminal stop like "CAR 18 (STR) STOPPED ON TRACK". `driver_number` is
+  // also frequently null on these rows — the car number is only in the text.
+  // So we (a) match a broader set of verbs, and (b) fall back to parsing the
+  // car number out of the message when driver_number is missing.
   const retiredDriverNumbers = useMemo<Set<number>>(() => {
+    // Verbs that indicate the car is out of the race for good.
+    // "STOPPED" alone is ambiguous (a car can stop and recover), so we
+    // require it to be paired with "ON TRACK" or "OFF TRACK" — the standard
+    // race-control phrasing for an immobilised car.
+    const RETIRED_RE =
+      /\bRETIRED\b|\bRETIREMENT\b|\bWITHDRAWN\b|\bDISQUALIFIED\b|\bDNS\b|\bSTOPPED\s+(?:ON|OFF)\s+TRACK\b/i;
+    const CAR_NUM_RE = /\bCAR\s+(\d{1,2})\b/i;
+
     const s = new Set<number>();
-    for (const msg of messages) {
-      if (
-        msg.driver_number != null &&
-        msg.message.toUpperCase().includes("RETIRED")
-      ) {
+    for (const msg of displayMessages) {
+      if (!RETIRED_RE.test(msg.message)) continue;
+
+      if (msg.driver_number != null) {
         s.add(msg.driver_number);
+        continue;
       }
+      // Fallback: pull "CAR <n>" out of the text.
+      const m = msg.message.match(CAR_NUM_RE);
+      if (m) s.add(Number(m[1]));
     }
     return s;
-  }, [messages]);
+  }, [displayMessages]);
 
   // Strip retired drivers from the location map so their dots vanish from
   // the track — no frozen ghost car sitting at the crash site.
@@ -342,7 +372,7 @@ export default function App() {
         currentLap={!isLive ? replayLap : null}
         totalLaps={totalLaps}
         isLive={isLive}
-        messages={messages}
+        messages={displayMessages}
         sessions={sessions}
         onSessionChange={setUserPickedSession}
       />
@@ -401,7 +431,7 @@ export default function App() {
           totalLaps={totalLaps}
           replayLap={replayLap}
           onChange={setReplayLap}
-          events={messages}
+          events={displayMessages}
         />
       )}
     </div>

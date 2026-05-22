@@ -233,7 +233,9 @@ export interface LeaderboardProps {
   /**
    * Driver numbers that have retired or DNF'd this session.
    * Rows shown dimmed at the bottom of the leaderboard with a "DNF" marker.
-   * Derived from RaceControl messages containing "RETIRED".
+   * Derived from RaceControl messages matching
+   * RETIRED | RETIREMENT | WITHDRAWN | DISQUALIFIED | DNS | "STOPPED ON/OFF TRACK".
+   * When `driver_number` is null on the row, falls back to parsing "CAR <n>".
    */
   retiredDrivers?: Set<number>;
   /** Current lap number in the race. Null when unknown or off-season. */
