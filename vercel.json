@@ -1,9 +1,12 @@
 {
+  "rewrites": [
+    {
+      "source": "/api/openf1/:path*",
+      "destination": "/api/openf1-proxy?path=:path*"
+    }
+  ],
   "functions": {
     "api/*.ts": {
-      "maxDuration": 10
-    },
-    "api/openf1/[...path].ts": {
       "maxDuration": 10
     }
   }
