@@ -1,12 +1,19 @@
 /**
  * Shared utilities for Vercel Serverless Functions.
  *
- * IMPORTANT: This file must live inside api/ so Vercel's esbuild bundler
- * includes it when functions do `import { ... } from "./_shared"`.
- * Files outside api/ (e.g. lib/) are NOT bundled by Vercel.
+ * Why this lives in lib/ (outside api/):
  *
- * Vercel excludes files whose names start with "_" from being deployed as
- * function endpoints, so this file is safe to co-locate here.
+ *   Vercel's @vercel/node builder excludes files matching api/_*.ts from
+ *   being deployed at all — both as routes and as bundled dependencies.
+ *   We previously tried co-locating this as `api/_shared.ts` on the theory
+ *   that the _ prefix would only block route-deployment, but at runtime the
+ *   bundled function failed with:
+ *
+ *     ERR_MODULE_NOT_FOUND: Cannot find module '/var/task/api/_shared'
+ *     imported from /var/task/api/sessions.js
+ *
+ *   Moving the file outside api/ lets Vercel's Node File Tracer pick it up
+ *   as a transitive dep and include it in each function's bundle.
  */
 
 import type { VercelRequest } from "@vercel/node";
