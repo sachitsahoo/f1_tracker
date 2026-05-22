@@ -1,0 +1,76 @@
+name: Seed F1 data
+
+# Daily cron at 02:00 UTC + manual dispatch. F1 races finish by ~21:00 UTC
+# at the latest (Las Vegas is the latest-starting race), so a 02:00 UTC cron
+# gives OpenF1 a comfortable window to ingest official data before we pull.
+#
+# Both scripts are fully idempotent — sessions already in the DB are skipped
+# via `isAlreadySeeded()`, and race_control upserts via the unique index.
+# Re-running on a day with no new data is a cheap no-op (just an OpenF1
+# /v1/sessions listing per year).
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      delay_ms:
+        description: "ms between OpenF1 requests (default 150 = paid tier)"
+        required: false
+        default: "150"
+
+# Only one seed at a time. If the daily cron and a manual run overlap, queue
+# instead of cancelling — we don't want a half-finished session left orphaned.
+concurrency:
+  group: seed
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    # Full backfill of a brand-new season worth of races is ~30 min worst case.
+    # Daily incremental runs typically finish in under 2 minutes.
+    timeout-minutes: 45
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      OPENF1_USERNAME: ${{ secrets.OPENF1_USERNAME }}
+      OPENF1_PASSWORD: ${{ secrets.OPENF1_PASSWORD }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      DELAY_MS: ${{ github.event.inputs.delay_ms || '150' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify required secrets are present
+        run: |
+          missing=""
+          for v in DATABASE_URL OPENF1_USERNAME OPENF1_PASSWORD SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do
+            if [ -z "${!v}" ]; then missing="$missing $v"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required secrets:$missing"
+            exit 1
+          fi
+
+      - name: Seed new sessions (drivers, positions, intervals, stints, race_control, laps, locations)
+        run: npx tsx scripts/seed.ts
+
+      - name: Backfill race_control for legacy sessions
+        # Sessions seeded before the race_control table existed need this pass.
+        # Once every session has rows in race_control, this becomes a fast no-op
+        # per session (one OpenF1 call returning data already present → upsert
+        # with ignoreDuplicates=true → 0 changes). Safe to keep in the cron.
+        run: npx tsx scripts/backfill-race-control.ts

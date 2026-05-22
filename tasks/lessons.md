@@ -1,3 +1,5 @@
+- [2026-05-22] 500 on /api/race-control was masked by the security-fixes generic error string. Always probe the unmodified prod response first (raw Supabase error text leaks the _root_ cause — "table not found" vs network vs auth). Once the security wrapper is in place, you lose that signal — so verify before locking it down.
+- [2026-05-22] When adding a new table after initial seed, scripts/seed.ts is NOT enough — `isAlreadySeeded()` skips every existing row. Write a focused backfill script (`scripts/backfill-<table>.ts`) that iterates `sessions` and only touches the new table. Use the unique-index + upsert idempotency pattern from `patch-locations.ts`.
 - Always run tsc --noEmit after writing types to catch shape mismatches early
 - useInterval hook centralises cleanup — all polling goes through it, never raw setInterval
 - Compute bounds once on circuit load, then reuse for all driver dot normalisation

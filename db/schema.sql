@@ -128,6 +128,34 @@ CREATE TABLE IF NOT EXISTS laps (
     DEFERRABLE INITIALLY DEFERRED
 );
 
+-- ─── Race control ─────────────────────────────────────────────────────────────
+-- Marshal flags, safety-car deployments, investigations, and other steward
+-- messages broadcast during a session. OpenF1 returns these without a stable
+-- id, so we use a surrogate BIGSERIAL PK and a unique index on the natural
+-- key (session_key, date, message) for ON CONFLICT DO NOTHING dedupe.
+
+CREATE TABLE IF NOT EXISTS race_control (
+  id            BIGSERIAL   NOT NULL,
+  session_key   INTEGER     NOT NULL,
+  date          TIMESTAMPTZ NOT NULL,
+  message       TEXT        NOT NULL,
+  driver_number INTEGER,
+  flag          TEXT,
+  lap_number    INTEGER,
+  scope         TEXT,
+  sector        INTEGER,
+  PRIMARY KEY (id),
+  CONSTRAINT race_control_session_key_fkey
+    FOREIGN KEY (session_key) REFERENCES sessions (session_key)
+    DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS race_control_natural_key_idx
+  ON race_control (session_key, date, message);
+
+CREATE INDEX IF NOT EXISTS race_control_session_date_idx
+  ON race_control (session_key, date);
+
 -- ─── Locations ────────────────────────────────────────────────────────────────
 -- One X/Y/Z snapshot per driver per lap (not raw telemetry).
 
@@ -196,4 +224,14 @@ DO $$ BEGIN
   ALTER TABLE locations ADD  CONSTRAINT locations_session_key_fkey
     FOREIGN KEY (session_key) REFERENCES sessions (session_key)
     DEFERRABLE INITIALLY DEFERRED;
+
+  -- race_control may not exist on databases created before it was added.
+  -- to_regclass returns NULL for missing relations, so this block becomes a
+  -- no-op until the CREATE TABLE above has run.
+  IF to_regclass('public.race_control') IS NOT NULL THEN
+    ALTER TABLE race_control DROP CONSTRAINT IF EXISTS race_control_session_key_fkey;
+    ALTER TABLE race_control ADD  CONSTRAINT race_control_session_key_fkey
+      FOREIGN KEY (session_key) REFERENCES sessions (session_key)
+      DEFERRABLE INITIALLY DEFERRED;
+  END IF;
 END; $$;

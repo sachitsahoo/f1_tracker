@@ -8,8 +8,9 @@
  *   /v1/drivers   → drivers table     (full roster, static per session)
  *   /v1/position  → positions table   (all records — leaderboard over time)
  *   /v1/intervals → intervals table   (all records — gap data over time)
- *   /v1/stints    → stints table      (tire compounds per driver)
- *   /v1/laps      → laps table        (lap/sector times per driver)
+ *   /v1/stints    → stints table        (tire compounds per driver)
+ *   /v1/race_control → race_control table (flags, safety car, investigations)
+ *   /v1/laps      → laps table          (lap/sector times per driver)
  *   /v1/location  → locations table   (ONE snapshot per driver per lap,
  *                                      closest to lap date_start — not raw telemetry)
  *
@@ -38,6 +39,7 @@ import type {
   Stint,
   Lap,
   Location,
+  RaceControl,
 } from "../src/types/f1.ts";
 
 // ─── Configuration ────────────────────────────────────────────────────────────
@@ -394,6 +396,28 @@ async function ensureSchema(client: PoolClient): Promise<void> {
         FOREIGN KEY (session_key) REFERENCES sessions (session_key)
         DEFERRABLE INITIALLY DEFERRED
     );
+
+    CREATE TABLE IF NOT EXISTS race_control (
+      id            BIGSERIAL   NOT NULL,
+      session_key   INTEGER     NOT NULL,
+      date          TIMESTAMPTZ NOT NULL,
+      message       TEXT        NOT NULL,
+      driver_number INTEGER,
+      flag          TEXT,
+      lap_number    INTEGER,
+      scope         TEXT,
+      sector        INTEGER,
+      PRIMARY KEY (id),
+      CONSTRAINT race_control_session_key_fkey
+        FOREIGN KEY (session_key) REFERENCES sessions (session_key)
+        DEFERRABLE INITIALLY DEFERRED
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS race_control_natural_key_idx
+      ON race_control (session_key, date, message);
+
+    CREATE INDEX IF NOT EXISTS race_control_session_date_idx
+      ON race_control (session_key, date);
   `);
 
   // ── Patch any pre-existing non-deferrable FK constraints ─────────────────────
@@ -446,6 +470,14 @@ async function ensureSchema(client: PoolClient): Promise<void> {
       ALTER TABLE locations ADD  CONSTRAINT locations_session_key_fkey
         FOREIGN KEY (session_key) REFERENCES sessions (session_key)
         DEFERRABLE INITIALLY DEFERRED;
+
+      -- race_control was added later; only patch if the table exists.
+      IF to_regclass('public.race_control') IS NOT NULL THEN
+        ALTER TABLE race_control DROP CONSTRAINT IF EXISTS race_control_session_key_fkey;
+        ALTER TABLE race_control ADD  CONSTRAINT race_control_session_key_fkey
+          FOREIGN KEY (session_key) REFERENCES sessions (session_key)
+          DEFERRABLE INITIALLY DEFERRED;
+      END IF;
     END; $$;
   `);
 }
@@ -550,6 +582,48 @@ async function seedIntervals(
       // gap_to_leader and interval can be string | number | null — store as TEXT
       r.gap_to_leader != null ? String(r.gap_to_leader) : null,
       r.interval != null ? String(r.interval) : null,
+    ],
+  );
+}
+
+/**
+ * Fetch race control messages (flags, safety car, investigations, …) for a
+ * session and bulk-insert. Dedup is via the (session_key, date, message)
+ * unique index — re-runs are idempotent.
+ *
+ * Empty arrays are normal (e.g. clean sessions with no incidents) — return 0.
+ */
+async function seedRaceControl(
+  client: PoolClient,
+  sessionKey: number,
+): Promise<number> {
+  const data = await openf1Get<RaceControl[]>(
+    `/race_control?session_key=${sessionKey}`,
+  );
+
+  return bulkInsert(
+    client,
+    "race_control",
+    [
+      "session_key",
+      "date",
+      "message",
+      "driver_number",
+      "flag",
+      "lap_number",
+      "scope",
+      "sector",
+    ] as const,
+    data,
+    (r) => [
+      sessionKey,
+      r.date,
+      r.message,
+      r.driver_number,
+      r.flag,
+      r.lap_number,
+      r.scope,
+      r.sector,
     ],
   );
 }
@@ -765,6 +839,9 @@ async function seedSession(
     const stintCount = await seedStints(client, session.session_key);
     console.log(`  ✓  stints (${stintCount})`);
 
+    const rcCount = await seedRaceControl(client, session.session_key);
+    console.log(`  ✓  race_control (${rcCount})`);
+
     const laps = await seedLaps(client, session.session_key);
     console.log(`  ✓  laps (${laps.length})`);
 
@@ -866,15 +943,33 @@ async function main(): Promise<void> {
     allSessions.push(...sessions);
   }
 
-  const total = allSessions.length;
-  console.log(`\nTotal: ${total} sessions to process`);
+  // ── Filter out sessions that have not yet finished ───────────────────────────
+  // Without this, the daily cron will pick up an upcoming race weekend, hit
+  // /v1/drivers, get an empty roster, throw CancelledSessionError, and insert
+  // the sessions row as a "cancelled" marker — permanently bricking that
+  // weekend's data. Only attempt to seed sessions whose date_end is in the past.
+  const nowMs = Date.now();
+  const finishedSessions = allSessions.filter((s) => {
+    if (!s.date_end) return false; // no end time → can't tell, skip safely
+    return new Date(s.date_end).getTime() < nowMs;
+  });
+
+  const skipped = allSessions.length - finishedSessions.length;
+  if (skipped > 0) {
+    console.log(
+      `  (skipping ${skipped} sessions whose date_end is in the future)`,
+    );
+  }
+
+  const total = finishedSessions.length;
+  console.log(`\nTotal: ${total} finished sessions to process`);
   console.log("══════════════════════════════════════════════════════════");
 
   // Seed each session, collecting failures without aborting the run
   const failed: string[] = [];
 
-  for (let i = 0; i < allSessions.length; i++) {
-    const session = allSessions[i]!;
+  for (let i = 0; i < finishedSessions.length; i++) {
+    const session = finishedSessions[i]!;
     try {
       await seedSession(session, i + 1, total);
     } catch (err) {
