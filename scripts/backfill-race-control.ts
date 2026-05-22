@@ -138,10 +138,23 @@ async function listSessions(): Promise<SessionRow[]> {
   return all.filter((s) => TARGET_SESSIONS.has(s.session_key));
 }
 
+/** Sentinel used to signal "no race control data exists for this session". */
+class NoRaceControlError extends Error {}
+
 async function backfillSession(s: SessionRow): Promise<number> {
-  const data = await openf1Get<RaceControl[]>(
-    `/race_control?session_key=${s.session_key}`,
-  );
+  let data: RaceControl[];
+  try {
+    data = await openf1Get<RaceControl[]>(
+      `/race_control?session_key=${s.session_key}`,
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // A 404 here is informational, not fatal — some pre-2024 sessions don't
+    // have race control data in OpenF1 at all. Surface it as a soft skip so
+    // the cron exits 0 instead of spamming failure notifications.
+    if (msg.includes("HTTP 404")) throw new NoRaceControlError(msg);
+    throw err;
+  }
   if (data.length === 0) return 0;
 
   // upsert against the (session_key, date, message) unique index — re-runs idempotent
@@ -156,12 +169,10 @@ async function backfillSession(s: SessionRow): Promise<number> {
     sector: r.sector,
   }));
 
-  const { error } = await supabase
-    .from("race_control")
-    .upsert(rows, {
-      onConflict: "session_key,date,message",
-      ignoreDuplicates: true,
-    });
+  const { error } = await supabase.from("race_control").upsert(rows, {
+    onConflict: "session_key,date,message",
+    ignoreDuplicates: true,
+  });
 
   if (error) throw new Error(`Supabase upsert: ${error.message}`);
   return rows.length;
@@ -178,6 +189,7 @@ async function main(): Promise<void> {
   }
 
   const failed: string[] = [];
+  const noData: number[] = [];
   const width = String(sessions.length).length;
 
   for (let i = 0; i < sessions.length; i++) {
@@ -189,6 +201,11 @@ async function main(): Promise<void> {
       const n = await backfillSession(s);
       console.log(`✓  ${n} messages`);
     } catch (err) {
+      if (err instanceof NoRaceControlError) {
+        console.log("⏭  no race_control data (OpenF1 404 — soft skip)");
+        noData.push(s.session_key);
+        continue;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       console.log(`✗  ${msg}`);
       failed.push(`${s.session_key}: ${msg}`);
@@ -197,7 +214,7 @@ async function main(): Promise<void> {
 
   console.log("══════════════════════════════════════════════════════════");
   console.log(
-    `Done. ${sessions.length - failed.length}/${sessions.length} sessions backfilled.`,
+    `Done. ${sessions.length - failed.length - noData.length}/${sessions.length} sessions backfilled; ${noData.length} skipped (no data).`,
   );
   if (failed.length > 0) {
     console.log(`Failed (${failed.length}):`);
