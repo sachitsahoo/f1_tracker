@@ -10,7 +10,12 @@ import type {
   ApiError,
 } from "../types/f1.ts";
 import { emitApiEvent } from "../utils/apiEvents";
-import { getBearerToken, invalidateToken } from "./auth";
+
+// NOTE: OpenF1 authentication now happens server-side in api/openf1/[...path].ts.
+// The browser no longer fetches or stores a Bearer token — it just hits
+// /api/openf1/* and our function injects auth before forwarding to OpenF1.
+// This file therefore omits the Authorization header and the 401 refresh path.
+// `./auth` is still used elsewhere (e.g. potential future MQTT) but not here.
 
 // In dev the Vite proxy rewrites /api/openf1/* → https://api.openf1.org/v1/*
 // In production Vercel rewrites handle the same forwarding (see vercel.json).
@@ -86,44 +91,29 @@ async function acquireSlot(): Promise<void> {
 }
 
 /**
- * Builds the Authorization header for a request.
- * Returns an empty object when no token is available (unauthenticated tier).
- */
-async function authHeaders(): Promise<Record<string, string>> {
-  const token = await getBearerToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-/**
- * Wraps `fetch` with three resilience behaviours:
+ * Wraps `fetch` with two resilience behaviours:
  *
- *  1. **Auth header injection:** attaches a Bearer token when the token proxy
- *     is configured. Tokens are fetched/cached by getBearerToken().
+ *  1. **HTTP 429 (rate limit):** emits a `rate-limit` warning event, backs off
+ *     for 60 s, then retries exactly once.
  *
- *  2. **HTTP 401 (token expired):** invalidates the cached token, fetches a
- *     fresh one, and retries the request exactly once.
- *
- *  3. **HTTP 429 (rate limit):** emits a `rate-limit` warning event, backs off
- *     for 60 s (OpenF1 sponsor tier: 6 req/s · 60 req/min), then retries exactly once.
- *
- *  4. **Network error (offline / DNS / CORS):** catches the `TypeError` thrown
+ *  2. **Network error (offline / DNS / CORS):** catches the `TypeError` thrown
  *     by the browser's `fetch`, emits a `network-error` event, and rethrows a
  *     typed `ApiError` (status 0) so hooks can retain stale data gracefully.
+ *
+ * Authentication is handled server-side by api/openf1/[...path].ts — this
+ * client no longer sends an Authorization header and 401s are not retried
+ * here because the server transparently refreshes its own JWT on 401.
  */
-async function fetchWithRetry(
-  url: string,
-  retryOn401 = true,
-): Promise<Response> {
+async function fetchWithRetry(url: string): Promise<Response> {
   // Throttle: wait for an available slot before firing the request.
-  // This prevents startup bursts from hitting the 6 req/s OpenF1 cap.
+  // Prevents startup bursts from hammering our own proxy function.
   await acquireSlot();
 
   let res: Response;
-  const headers = await authHeaders();
 
   // ── Initial attempt ────────────────────────────────────────────────────────
   try {
-    res = await fetch(url, { headers });
+    res = await fetch(url);
   } catch (_err) {
     emitApiEvent(
       "network-error",
@@ -137,23 +127,6 @@ async function fetchWithRetry(
     throw error;
   }
 
-  // ── 401 — token expired, refresh and retry once ────────────────────────────
-  if (res.status === 401 && retryOn401) {
-    invalidateToken();
-    const freshHeaders = await authHeaders();
-    try {
-      return await fetch(url, { headers: freshHeaders });
-    } catch (_err) {
-      emitApiEvent("network-error", "Network error during token refresh retry");
-      const error: ApiError = {
-        status: 0,
-        message: "Network error during token refresh retry",
-        isRateLimit: false,
-      };
-      throw error;
-    }
-  }
-
   // ── 429 back-off + single retry ────────────────────────────────────────────
   if (res.status === 429) {
     emitApiEvent(
@@ -162,9 +135,8 @@ async function fetchWithRetry(
     );
     await sleep(60_000);
 
-    const retryHeaders = await authHeaders();
     try {
-      res = await fetch(url, { headers: retryHeaders });
+      res = await fetch(url);
     } catch (_err) {
       emitApiEvent(
         "network-error",

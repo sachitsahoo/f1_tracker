@@ -83,37 +83,86 @@ function openf1TokenPlugin(): Plugin {
   };
 }
 
+// ─── /api/openf1/* dev proxy with server-side auth injection ──────────────────
+//
+// Mirrors the prod handler in api/openf1/[...path].ts: dev fetches a JWT
+// from OpenF1 using the same credentials, attaches it to the upstream request,
+// and forwards. Browser never sees the JWT in dev either.
+//
+// Replaces the previous vite proxy that forwarded /api/openf1/** transparently
+// to api.openf1.org. That worked for off-session traffic but 401'd as soon as
+// OpenF1 entered live-session mode.
+
+function openf1ProxyPlugin(): Plugin {
+  return {
+    name: "openf1-proxy-dev",
+    apply: "serve",
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use(
+        "/api/openf1",
+        async (req: IncomingMessage, res: ServerResponse) => {
+          if (req.method !== "GET") {
+            res.writeHead(405, { Allow: "GET" });
+            res.end(JSON.stringify({ error: "Only GET is supported" }));
+            return;
+          }
+
+          // Re-decode %3E → > and %3C → < so OpenF1 receives the literal
+          // comparison operators its date_gt / date_lt params expect.
+          const incoming = (req.url ?? "")
+            .replace(/%3E/gi, ">")
+            .replace(/%3C/gi, "<");
+          if (!incoming || incoming === "/") {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Missing OpenF1 path" }));
+            return;
+          }
+
+          const token = await getDevToken();
+          if (!token) {
+            res.writeHead(503, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({ error: "Auth credentials not configured" }),
+            );
+            return;
+          }
+
+          // Note: the middleware mount point /api/openf1 means req.url starts
+          // AFTER that prefix here (e.g. "/sessions?year=2026"). No stripping needed.
+          const upstream = `https://api.openf1.org/v1${incoming}`;
+
+          try {
+            const upstreamRes = await fetch(upstream, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            const body = await upstreamRes.text();
+            res.writeHead(upstreamRes.status, {
+              "Content-Type":
+                upstreamRes.headers.get("content-type") ?? "application/json",
+              "Cache-Control": "no-store",
+            });
+            res.end(body);
+          } catch (err) {
+            res.writeHead(502, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: "Upstream OpenF1 fetch failed",
+                detail: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          }
+        },
+      );
+    },
+  };
+}
+
 // ─── Vite config ──────────────────────────────────────────────────────────────
 
 export default defineConfig({
-  plugins: [react(), openf1TokenPlugin()],
+  plugins: [react(), openf1TokenPlugin(), openf1ProxyPlugin()],
   server: {
     proxy: {
-      // All requests to /api/openf1/** are forwarded to https://api.openf1.org/v1/**
-      // The browser sends the Authorization header directly — no server-side injection.
-      "/api/openf1": {
-        target: "https://api.openf1.org",
-        changeOrigin: true,
-        // Rewrite path only — query string (including date> / date< filters)
-        // is forwarded verbatim by http-proxy.
-        rewrite: (path) => path.replace(/^\/api\/openf1/, "/v1"),
-        // Re-decode %3E → > and %3C → < in the outgoing URL so OpenF1
-        // receives the literal comparison operators it expects.
-        configure: (proxy) => {
-          proxy.on("proxyReq", (proxyReq) => {
-            const raw = proxyReq.path;
-            const fixed = raw.replace(/%3E/gi, ">").replace(/%3C/gi, "<");
-            if (fixed !== raw) proxyReq.path = fixed;
-          });
-        },
-      },
-      // /api/token is handled by the openf1TokenPlugin middleware above when
-      // running `npm run dev`.  This proxy entry is kept as a fallback for
-      // `vercel dev`, which serves the route from api/token.ts instead.
-      "/api/token": {
-        target: "http://localhost:3000",
-        changeOrigin: true,
-      },
       // /api/location-snapshot is a Vercel function (server-side caching proxy
       // to OpenF1). Under `vercel dev` it is served automatically. Under
       // `npm run dev` this proxy forwards the request to the Vercel dev server
