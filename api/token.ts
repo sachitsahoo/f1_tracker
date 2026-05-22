@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { checkRateLimit, clientIp } from "../lib/shared";
+import { checkRateLimit, clientIp } from "../lib/shared.js";
 
 // ─── Module-level token cache (persists across warm invocations) ──────────────
 
