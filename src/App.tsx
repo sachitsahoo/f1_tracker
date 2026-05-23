@@ -240,6 +240,58 @@ export default function App() {
     return best;
   }, [laps, replayCutoff]);
 
+  // ── Session + personal best sector times (cutoff-aware) ─────────────────
+  // Drives the three S1/S2/S3 color chips below each LAST LAP cell:
+  //   • purple — this lap's sector matches the overall session best
+  //   • green  — matches the driver's own personal best (not overall)
+  //   • yellow — neither (their pace dropped for this sector)
+  //
+  // Walks ALL laps the same way as sessionFastestLap because a sector's
+  // best may have been set on a lap whose lap_duration is not the session
+  // fastest. Outlaps are excluded but lap 1 is allowed — a sector can be
+  // clean even on the standing-start lap (S2/S3 on most circuits).
+  const sessionBestSectors = useMemo<{
+    overall: [number | null, number | null, number | null];
+    personal: Record<number, [number | null, number | null, number | null]>;
+  }>(() => {
+    const overall: [number | null, number | null, number | null] = [
+      null,
+      null,
+      null,
+    ];
+    const personal: Record<
+      number,
+      [number | null, number | null, number | null]
+    > = {};
+
+    for (const lap of laps) {
+      if (lap.is_pit_out_lap) continue;
+      if (replayCutoff !== null && lap.date_start > replayCutoff) continue;
+
+      const sectors: [number | null, number | null, number | null] = [
+        lap.duration_sector_1,
+        lap.duration_sector_2,
+        lap.duration_sector_3,
+      ];
+      const driver = lap.driver_number;
+      if (!personal[driver]) personal[driver] = [null, null, null];
+
+      for (let i = 0; i < 3; i++) {
+        const s = sectors[i];
+        if (s == null) continue;
+        if (overall[i] == null || s < (overall[i] as number)) overall[i] = s;
+        if (
+          personal[driver][i] == null ||
+          s < (personal[driver][i] as number)
+        ) {
+          personal[driver][i] = s;
+        }
+      }
+    }
+
+    return { overall, personal };
+  }, [laps, replayCutoff]);
+
   // Intervals to display — same cutoff logic.
   const displayIntervals: Record<number, Interval> = useMemo(() => {
     if (replayCutoff === null) return intervals;
@@ -543,6 +595,8 @@ export default function App() {
             retiredDrivers={retiredDriverNumbers}
             fastestLapTime={sessionFastestLap?.time ?? null}
             fastestLapDriverNumber={sessionFastestLap?.driverNumber ?? null}
+            overallBestSectors={sessionBestSectors.overall}
+            personalBestSectors={sessionBestSectors.personal}
           />
         </div>
       </div>

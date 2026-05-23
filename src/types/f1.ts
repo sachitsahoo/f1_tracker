@@ -272,6 +272,24 @@ export interface LeaderboardProps {
    * subsequent slower laps until someone else beats the time.
    */
   fastestLapDriverNumber?: number | null;
+  /**
+   * Session-best sector times in seconds — `[s1, s2, s3]`, any entry null
+   * while no driver has set a clean time for that sector yet. Cutoff-aware.
+   * Drives the **purple** chip when a row's most recent lap matched the
+   * overall best for that sector.
+   */
+  overallBestSectors?: [number | null, number | null, number | null] | null;
+  /**
+   * Personal-best sector times per driver — keyed by driver_number, each
+   * value `[s1, s2, s3]` with null for sectors the driver hasn't completed
+   * cleanly. Cutoff-aware. Drives the **green** chip when a row's most
+   * recent lap matched the driver's own previous best for that sector
+   * (but didn't match the session overall best — purple wins).
+   */
+  personalBestSectors?: Record<
+    number,
+    [number | null, number | null, number | null]
+  >;
   /** Current lap number in the race. Null when unknown or off-season. */
   currentLap: number | null;
   /** Total scheduled race laps. Null when unknown. */

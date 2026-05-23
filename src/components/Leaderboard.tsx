@@ -284,6 +284,77 @@ function TireBadge({ compound, age }: TireBadgeProps) {
   );
 }
 
+// ─── Sector chip palette ─────────────────────────────────────────────────────
+// Broadcast convention:
+//   • purple — this lap's sector matches the overall session best
+//   • green  — matches the driver's own personal best (but not overall)
+//   • yellow — neither: a slower sector than the driver's previous best
+//   • grey   — no data for that sector (yet to be recorded / invalidated)
+
+const SECTOR_COLORS = {
+  overall: "#B14BFF",
+  personal: "#00C853",
+  slower: "#FFD600",
+  empty: "#3A3A3A",
+} as const;
+
+const SECTOR_TOLERANCE_S = 0.001; // 1 ms — defensive against backend rounding
+
+interface SectorChipsProps {
+  /** This row's most recent completed lap, or undefined when none yet. */
+  lap: Lap | undefined;
+  /** Session-overall best [s1, s2, s3]; pass `null` to disable purple. */
+  overall: [number | null, number | null, number | null] | null | undefined;
+  /** This driver's personal-best [s1, s2, s3]; pass `null` to disable green. */
+  personal: [number | null, number | null, number | null] | null | undefined;
+}
+
+/**
+ * Three tiny coloured bars rendered under the LAST LAP time, mirroring
+ * the sector-status indicators on every F1 broadcast graphic. Each bar
+ * reflects how this row's S1/S2/S3 compares against the session and
+ * personal bests at the current replay cutoff.
+ */
+function SectorChips({ lap, overall, personal }: SectorChipsProps) {
+  if (!lap) return null;
+  const sectors: Array<number | null> = [
+    lap.duration_sector_1,
+    lap.duration_sector_2,
+    lap.duration_sector_3,
+  ];
+
+  const chipColor = (sector: number | null, i: number): string => {
+    if (sector == null) return SECTOR_COLORS.empty;
+    const ob = overall?.[i] ?? null;
+    const pb = personal?.[i] ?? null;
+    if (ob != null && Math.abs(sector - ob) < SECTOR_TOLERANCE_S) {
+      return SECTOR_COLORS.overall;
+    }
+    if (pb != null && Math.abs(sector - pb) < SECTOR_TOLERANCE_S) {
+      return SECTOR_COLORS.personal;
+    }
+    return SECTOR_COLORS.slower;
+  };
+
+  return (
+    <span
+      style={styles.sectorChips}
+      aria-label="Sector status: S1, S2, S3"
+      role="img"
+    >
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          style={{
+            ...styles.sectorChip,
+            backgroundColor: chipColor(sectors[i], i),
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function Leaderboard({
@@ -297,6 +368,8 @@ export default function Leaderboard({
   retiredDrivers,
   fastestLapTime,
   fastestLapDriverNumber,
+  overallBestSectors,
+  personalBestSectors,
 }: LeaderboardProps) {
   // Build O(1) lookup maps — avoids Array.find() inside the render loop
   const driverMap = new Map<number, Driver>(
@@ -490,15 +563,25 @@ export default function Leaderboard({
                     {lap?.lap_number ?? "—"}
                   </span>
 
-                  {/* Last lap time — purple when this row holds the session fastest */}
-                  <span
-                    style={{
-                      ...styles.colLap,
-                      ...styles.lapTime,
-                      ...(isFastestLapForRow(lap) ? styles.lapTimeFastest : {}),
-                    }}
-                  >
-                    {formatLapTime(lap?.lap_duration ?? null)}
+                  {/* Last lap time — purple when this row holds the session
+                      fastest. Sector chips render below the time, inside the
+                      same column, so this cell becomes a small flex stack. */}
+                  <span style={{ ...styles.colLap, ...styles.lastLapStack }}>
+                    <span
+                      style={{
+                        ...styles.lapTime,
+                        ...(isFastestLapForRow(lap)
+                          ? styles.lapTimeFastest
+                          : {}),
+                      }}
+                    >
+                      {formatLapTime(lap?.lap_duration ?? null)}
+                    </span>
+                    <SectorChips
+                      lap={lap}
+                      overall={overallBestSectors}
+                      personal={personalBestSectors?.[pos.driver_number]}
+                    />
                   </span>
                 </div>
               );
@@ -624,15 +707,25 @@ export default function Leaderboard({
                     {lap?.lap_number ?? "—"}
                   </span>
 
-                  {/* Last lap time — purple when this row holds the session fastest */}
-                  <span
-                    style={{
-                      ...styles.colLap,
-                      ...styles.lapTime,
-                      ...(isFastestLapForRow(lap) ? styles.lapTimeFastest : {}),
-                    }}
-                  >
-                    {formatLapTime(lap?.lap_duration ?? null)}
+                  {/* Last lap time — purple when this row holds the session
+                      fastest. Sector chips render below the time, inside the
+                      same column, so this cell becomes a small flex stack. */}
+                  <span style={{ ...styles.colLap, ...styles.lastLapStack }}>
+                    <span
+                      style={{
+                        ...styles.lapTime,
+                        ...(isFastestLapForRow(lap)
+                          ? styles.lapTimeFastest
+                          : {}),
+                      }}
+                    >
+                      {formatLapTime(lap?.lap_duration ?? null)}
+                    </span>
+                    <SectorChips
+                      lap={lap}
+                      overall={overallBestSectors}
+                      personal={personalBestSectors?.[pos.driver_number]}
+                    />
                   </span>
                 </div>
               );
@@ -837,6 +930,18 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: "16px",
   },
 
+  // ── LAST LAP cell wrapper — vertical stack of [lap time, sector chips]
+  // so the chips render under the time inside the same column (no panel
+  // resize needed).
+  lastLapStack: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-end",
+    justifyContent: "center",
+    gap: "3px",
+    width: "100%",
+  },
+
   // ── Lap time — monospace, tabular-nums
   lapTime: {
     fontFamily: MONO_FONT,
@@ -844,6 +949,21 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#BBBBBB",
     fontVariantNumeric: "tabular-nums",
     letterSpacing: "0.02em",
+    lineHeight: 1,
+  },
+
+  // ── Sector chips — three small bars under each LAST LAP time
+  sectorChips: {
+    display: "inline-flex",
+    gap: "2px",
+    flexShrink: 0,
+    lineHeight: 0,
+  },
+  sectorChip: {
+    display: "inline-block",
+    width: "18px",
+    height: "3px",
+    borderRadius: "1px",
   },
   // ── Lap time when this row holds the session fastest — broadcast purple.
   // F1 graphics convention: purple = session-best, regardless of who's leading.
