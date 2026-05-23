@@ -128,8 +128,8 @@ export default function ReplayScrubber({
           border-radius: 2px;
           background: linear-gradient(
             to right,
-            #E8002D 0%,
-            #E8002D ${pct}%,
+            #888888 0%,
+            #888888 ${pct}%,
             #333333 ${pct}%,
             #333333 100%
           );
