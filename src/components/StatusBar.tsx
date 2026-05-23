@@ -184,7 +184,16 @@ export default function StatusBar({
         >
           <span style={styles.rcLabel}>RACE CONTROL</span>
           <span style={styles.rcMessage}>
-            {truncateAtWordBoundary(latestMessage.message, 120)}
+            {/*
+             * CSS text-overflow: ellipsis on .rcMessage is the real visual
+             * clamp — it cuts at whatever pixel width the flex-resolved
+             * .rcBlock ends up. The JS truncation is now purely a
+             * defensive safety net for pathological multi-paragraph
+             * messages that would inflate the DOM, snapping at the last
+             * word boundary inside a 300-char budget. On any normal
+             * widescreen render this never fires.
+             */}
+            {truncateAtWordBoundary(latestMessage.message, 300)}
           </span>
         </div>
       ) : (
