@@ -54,13 +54,40 @@ function formatLapTime(seconds: number | null): string {
   return `${mins}:${secs.toFixed(3).padStart(6, "0")}`;
 }
 
-/** Format gap-to-leader. P1 is always "LEADER"; null gaps show "—". */
+/**
+ * Format gap-to-leader.
+ *
+ * Rules, in order:
+ *   1. P1 is always "LEADER" — no gap to display.
+ *   2. Null/empty → "—".
+ *   3. Lap-down strings ("+1 LAP", "2 LAPS") pass through with a "+" prefix.
+ *   4. Numeric values are padded to exactly 3 decimal places so the column
+ *      stays aligned even when the API returns "1.194" vs "15.08". Without
+ *      this the leaderboard looks like raw API output.
+ *   5. Zero-gap guard: OpenF1 occasionally publishes gap_to_leader = 0 for a
+ *      non-leader driver — typically a stale interval frame the moment the
+ *      car has a crash lap or unusual sector. Treat 0 on any non-P1 row as
+ *      missing data and render "—" instead of the misleading "+0.000".
+ */
 function formatGap(gap: string | number | null, position: number): string {
   if (position === 1) return "LEADER";
   if (gap == null || gap === "") return "—";
   const str = String(gap);
-  // If the API already prefixes with "+", keep it; otherwise add it
-  return str.startsWith("+") || str.includes("LAP") ? str : `+${str}`;
+
+  // Lap-down passthrough — never apply numeric formatting to "+1 LAP" etc.
+  if (str.toUpperCase().includes("LAP")) {
+    return str.startsWith("+") ? str : `+${str}`;
+  }
+
+  // Strip a leading "+" so Number() can parse e.g. "+1.194".
+  const num = Number(str.replace(/^\+/, ""));
+  if (Number.isFinite(num)) {
+    if (num === 0) return "—"; // see rule 5 above
+    return `+${num.toFixed(3)}`;
+  }
+
+  // Unparseable string — defensive passthrough preserving any existing sign.
+  return str.startsWith("+") || str.startsWith("-") ? str : `+${str}`;
 }
 
 /**
@@ -659,7 +686,7 @@ const styles: Record<string, React.CSSProperties> = {
   colLapNum: { width: "36px", flexShrink: 0, textAlign: "right" as const },
   colLap: { width: "76px", flexShrink: 0, textAlign: "right" as const },
 
-  // ── Rows — sharp edges, 1px #222 dividers, 300ms transition
+  // ── Rows — sharp edges, barely-visible rgba dividers, 300ms transition
   rows: {
     display: "flex",
     flexDirection: "column",
@@ -670,7 +697,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     padding: "8px 16px 8px 12px",
-    borderBottom: "1px solid #222222",
+    borderBottom: "1px solid rgba(255,255,255,0.04)",
     transition: "background-color 0.3s ease, box-shadow 0.3s ease",
     // borderLeft is set dynamically per-row in team color
   },
