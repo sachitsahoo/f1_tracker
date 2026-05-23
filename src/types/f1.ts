@@ -233,9 +233,10 @@ export interface LeaderboardProps {
   /**
    * Driver numbers that have retired or DNF'd this session.
    * Rows shown dimmed at the bottom of the leaderboard with a "DNF" marker.
-   * Derived from RaceControl messages matching
-   * RETIRED | RETIREMENT | WITHDRAWN | DISQUALIFIED | DNS | "STOPPED ON/OFF TRACK".
-   * When `driver_number` is null on the row, falls back to parsing "CAR <n>".
+   * Derived from /laps data: any driver whose highest completed lap is
+   * 3 or more laps behind the race leader is treated as retired. OpenF1
+   * does not expose a DNF flag and race_control text contains no
+   * retirement messages — lap drop-off is the only reliable signal.
    */
   retiredDrivers?: Set<number>;
   /** Current lap number in the race. Null when unknown or off-season. */

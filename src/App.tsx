@@ -208,40 +208,47 @@ export default function App() {
     return messages.filter((m) => m.date <= replayCutoff);
   }, [replayCutoff, messages]);
 
-  // Retired driver numbers — derived from race control messages.
-  // Used to remove dots from the track map and push rows to the DNF section.
-  // Uses displayMessages so retirements only appear once the scrubber reaches
-  // the lap they happened on.
+  // Retired driver numbers — derived from /laps row count per driver.
   //
-  // OpenF1 race-control text is inconsistent: retirement rows can say
-  // "RETIRED", "RETIREMENT", "WITHDRAWN", "DISQUALIFIED", or describe a
-  // terminal stop like "CAR 18 (STR) STOPPED ON TRACK". `driver_number` is
-  // also frequently null on these rows — the car number is only in the text.
-  // So we (a) match a broader set of verbs, and (b) fall back to parsing the
-  // car number out of the message when driver_number is missing.
+  // OpenF1 does NOT expose a DNF flag and the race_control feed contains
+  // zero retirement-indicator messages (verified across all 89 seeded
+  // sessions — see commit history). The OpenF1 maintainer confirms the
+  // only reliable signal is data drop-off in /laps or /intervals.
+  //
+  // Rule: any driver whose highest completed lap is >= DNF_LAP_GAP behind
+  // the race leader is treated as retired. Lap rows are only emitted when
+  // a driver crosses the start/finish line, so a stopped car simply stops
+  // accumulating laps while the leader keeps going. 3 laps is conservative
+  // — it tolerates a long pit stop or one slow lap behind a safety car
+  // without false-positives, but catches every real retirement within
+  // ~5 minutes of it happening.
+  //
+  // Respects the replay cutoff: only laps started before the scrubber
+  // position are counted, so retirements appear on the leaderboard
+  // exactly when the scrubber crosses the retirement lap.
   const retiredDriverNumbers = useMemo<Set<number>>(() => {
-    // Verbs that indicate the car is out of the race for good.
-    // "STOPPED" alone is ambiguous (a car can stop and recover), so we
-    // require it to be paired with "ON TRACK" or "OFF TRACK" — the standard
-    // race-control phrasing for an immobilised car.
-    const RETIRED_RE =
-      /\bRETIRED\b|\bRETIREMENT\b|\bWITHDRAWN\b|\bDISQUALIFIED\b|\bDNS\b|\bSTOPPED\s+(?:ON|OFF)\s+TRACK\b/i;
-    const CAR_NUM_RE = /\bCAR\s+(\d{1,2})\b/i;
+    if (laps.length === 0) return new Set();
 
-    const s = new Set<number>();
-    for (const msg of displayMessages) {
-      if (!RETIRED_RE.test(msg.message)) continue;
-
-      if (msg.driver_number != null) {
-        s.add(msg.driver_number);
-        continue;
+    const DNF_LAP_GAP = 3;
+    const maxLap: Record<number, number> = {};
+    for (const lap of laps) {
+      if (replayCutoff !== null && lap.date_start > replayCutoff) continue;
+      const prev = maxLap[lap.driver_number];
+      if (prev === undefined || lap.lap_number > prev) {
+        maxLap[lap.driver_number] = lap.lap_number;
       }
-      // Fallback: pull "CAR <n>" out of the text.
-      const m = msg.message.match(CAR_NUM_RE);
-      if (m) s.add(Number(m[1]));
     }
-    return s;
-  }, [displayMessages]);
+
+    const leaderLap = Math.max(0, ...Object.values(maxLap));
+    // Race hasn't gotten going yet — don't flag anyone.
+    if (leaderLap < DNF_LAP_GAP) return new Set();
+
+    const out = new Set<number>();
+    for (const [drv, last] of Object.entries(maxLap)) {
+      if (leaderLap - last >= DNF_LAP_GAP) out.add(Number(drv));
+    }
+    return out;
+  }, [laps, replayCutoff]);
 
   // Strip retired drivers from the location map so their dots vanish from
   // the track — no frozen ghost car sitting at the crash site.
