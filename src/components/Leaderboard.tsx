@@ -319,6 +319,9 @@ export default function Leaderboard({
         <span style={{ ...styles.colTire, ...styles.colHeaderLabel }}>
           TIRE
         </span>
+        <span style={{ ...styles.colLapNum, ...styles.colHeaderLabel }}>
+          LAP
+        </span>
         <span style={{ ...styles.colLap, ...styles.colHeaderLabel }}>
           LAST LAP
         </span>
@@ -433,14 +436,16 @@ export default function Leaderboard({
                     <TireBadge compound={stint?.compound} age={age} />
                   </span>
 
-                  {/* Last lap time + dim "L<n>" subscript */}
+                  {/* Lap number cell — separate column */}
+                  <span
+                    style={{ ...styles.colLapNum, ...styles.lapNumberCell }}
+                  >
+                    {lap?.lap_number ?? "—"}
+                  </span>
+
+                  {/* Last lap time */}
                   <span style={{ ...styles.colLap, ...styles.lapTime }}>
-                    <span>{formatLapTime(lap?.lap_duration ?? null)}</span>
-                    {lap?.lap_number != null && (
-                      <span style={styles.lapNumberSubscript}>
-                        L{lap.lap_number}
-                      </span>
-                    )}
+                    {formatLapTime(lap?.lap_duration ?? null)}
                   </span>
                 </div>
               );
@@ -550,14 +555,16 @@ export default function Leaderboard({
                     <TireBadge compound={stint?.compound} age={age} />
                   </span>
 
-                  {/* Last lap time + dim "L<n>" subscript */}
+                  {/* Lap number cell — separate column */}
+                  <span
+                    style={{ ...styles.colLapNum, ...styles.lapNumberCell }}
+                  >
+                    {lap?.lap_number ?? "—"}
+                  </span>
+
+                  {/* Last lap time */}
                   <span style={{ ...styles.colLap, ...styles.lapTime }}>
-                    <span>{formatLapTime(lap?.lap_duration ?? null)}</span>
-                    {lap?.lap_number != null && (
-                      <span style={styles.lapNumberSubscript}>
-                        L{lap.lap_number}
-                      </span>
-                    )}
+                    {formatLapTime(lap?.lap_duration ?? null)}
                   </span>
                 </div>
               );
@@ -665,7 +672,8 @@ const styles: Record<string, React.CSSProperties> = {
   colDriver: { flex: 1, minWidth: "110px" },
   colGap: { width: "80px", flexShrink: 0, textAlign: "right" as const },
   colTire: { width: "68px", flexShrink: 0, textAlign: "center" as const },
-  colLap: { width: "84px", flexShrink: 0, textAlign: "right" as const },
+  colLapNum: { width: "36px", flexShrink: 0, textAlign: "right" as const },
+  colLap: { width: "76px", flexShrink: 0, textAlign: "right" as const },
 
   // ── Rows — sharp edges, 1px #222 dividers, 300ms transition
   rows: {
@@ -765,16 +773,14 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#BBBBBB",
     fontVariantNumeric: "tabular-nums",
     letterSpacing: "0.02em",
-    display: "flex",
-    alignItems: "baseline",
-    justifyContent: "flex-end",
-    gap: "5px",
   },
-  // ── Dim "L25" subscript next to the lap time
-  lapNumberSubscript: {
-    color: "#666666",
-    fontSize: "9px",
-    letterSpacing: "0.04em",
+  // ── Lap number cell — slightly dimmer than the time but same monospace
+  lapNumberCell: {
+    fontFamily: MONO_FONT,
+    fontSize: "11px",
+    color: "#888888",
+    fontVariantNumeric: "tabular-nums",
+    letterSpacing: "0.02em",
   },
 
   // ── DNF label — red, small, in place of position number
