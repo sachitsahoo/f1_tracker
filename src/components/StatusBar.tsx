@@ -166,11 +166,17 @@ export default function StatusBar({
         )}
       </div>
 
-      {/* ── Spacer ────────────────────────────────────────────────────────── */}
-      <div style={styles.spacer} />
-
-      {/* ── Race control message ──────────────────────────────────────────── */}
-      {latestMessage && (
+      {/*
+       * ── Race control message ─────────────────────────────────────────────
+       * Fills all available horizontal space between the session block and
+       * the right-side badges. When no message exists, fall back to a flex
+       * spacer so the layout doesn't collapse.
+       *
+       * JS truncation has a generous 120-char budget — the CSS ellipsis on
+       * .rcMessage is the real width clamp, snapping the rendered text to
+       * whatever pixel width flex resolves to.
+       */}
+      {latestMessage ? (
         <div
           style={styles.rcBlock}
           aria-label="Latest race control message"
@@ -178,9 +184,11 @@ export default function StatusBar({
         >
           <span style={styles.rcLabel}>RACE CONTROL</span>
           <span style={styles.rcMessage}>
-            {truncateAtWordBoundary(latestMessage.message, 50)}
+            {truncateAtWordBoundary(latestMessage.message, 120)}
           </span>
         </div>
+      ) : (
+        <div style={styles.spacer} />
       )}
 
       {/* ── Track status badge ────────────────────────────────────────────── */}
@@ -279,16 +287,17 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
   },
 
-  // ── Race control message (centre of bar)
+  // ── Race control message (fills available width in the bar)
   rcBlock: {
+    flex: "1 1 auto",
+    minWidth: 0, // critical: lets the flex item shrink below its content size so CSS ellipsis can engage
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
     gap: "1px",
-    maxWidth: "480px",
     overflow: "hidden",
-    padding: "0 12px",
+    padding: "0 16px",
     borderLeft: "1px solid #2A2A2A",
     borderRight: "1px solid #2A2A2A",
   },

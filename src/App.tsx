@@ -535,10 +535,10 @@ export default function App() {
 // ───────────────
 // • #page    — full-viewport dark container, vertical flex column
 // • #body    — flex row, fills remaining height after StatusBar (48px)
-//   – .map-panel         : flex 3 3 0, min-width 560px  (~60%)
-//   – .leaderboard-panel : flex 0 0 auto, width 420px   (~40%)
+//   – .map-panel         : flex 3 3 0, min-width 560px
+//   – .leaderboard-panel : flex 0 0 auto, width 460px
 //
-// At 1024px: map gets 1024−420 = 604px (~59 %) — exactly within spec.
+// At 1024px: map gets 1024−460 = 564px — above its 560px min, just barely.
 // Nothing shrinks below 1024px total; overflow-x auto on the page guards
 // against viewport widths < 1024px without breaking the layout.
 
@@ -583,8 +583,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   // ── Right panel — leaderboard ──────────────────────────────────────────────
+  // 460px gives the timing tower columns (32+110+80+68+36+76 = 402px of column
+  // widths plus 28px row padding plus 4px team-color borderLeft = 434px needed)
+  // ~26px of breathing room. Previous 420px clipped the LAST LAP decimal.
   leaderboardPanel: {
-    width: "420px",
+    width: "460px",
     flexShrink: 0,
     display: "flex",
     flexDirection: "column",
