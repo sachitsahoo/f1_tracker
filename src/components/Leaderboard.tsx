@@ -223,7 +223,7 @@ const skeletonStyles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     gap: "12px",
-    padding: "9px 16px 9px 12px",
+    padding: "5px 16px 5px 12px",
     borderBottom: "1px solid #1E1E1E",
     // 4px left gap to align with real rows that have a team-color border
     paddingLeft: "16px",
@@ -705,7 +705,7 @@ const styles: Record<string, React.CSSProperties> = {
   row: {
     display: "flex",
     alignItems: "center",
-    padding: "8px 16px 8px 12px",
+    padding: "5px 16px 5px 12px",
     borderBottom: "1px solid rgba(255,255,255,0.04)",
     transition: "background-color 0.3s ease, box-shadow 0.3s ease",
     // borderLeft is set dynamically per-row in team color
