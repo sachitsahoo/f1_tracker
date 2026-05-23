@@ -64,6 +64,24 @@ function statusLabel(status: TrackStatus): string {
   }
 }
 
+/**
+ * Trim a string to a maximum character budget, snapping back to the
+ * nearest preceding space so words are never cut mid-letter. Appends an
+ * ellipsis when truncation occurs. If no usable space exists in the
+ * second half of the budget (e.g. a single very long token), falls back
+ * to a hard cut so the layout still works.
+ *
+ * The CSS layer also applies `text-overflow: ellipsis` as a safety net
+ * for genuinely overlong single tokens (URLs, run-on text).
+ */
+function truncateAtWordBoundary(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  const sliced = text.slice(0, maxChars);
+  const lastSpace = sliced.lastIndexOf(" ");
+  const safe = lastSpace > maxChars * 0.5 ? sliced.slice(0, lastSpace) : sliced;
+  return safe.trimEnd() + "…";
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 /**
@@ -159,7 +177,9 @@ export default function StatusBar({
           aria-live="polite"
         >
           <span style={styles.rcLabel}>RACE CONTROL</span>
-          <span style={styles.rcMessage}>{latestMessage.message}</span>
+          <span style={styles.rcMessage}>
+            {truncateAtWordBoundary(latestMessage.message, 56)}
+          </span>
         </div>
       )}
 

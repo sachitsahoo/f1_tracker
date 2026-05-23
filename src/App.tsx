@@ -442,38 +442,6 @@ export default function App() {
 
   return (
     <div style={styles.page}>
-      {/*
-       * REPLAY banner — prominent yellow bar shown whenever we are displaying
-       * historical data (session exists but its window has already closed).
-       * The StatusBar also shows a REPLAY badge, but this banner is more
-       * visible when the user first loads a non-live session.
-       */}
-      {session !== null && !isLive && (
-        <div style={styles.replayBanner} role="status" aria-live="polite">
-          <span style={styles.replayIcon} aria-hidden="true">
-            ⏮
-          </span>
-          <span style={styles.replayText}>REPLAY</span>
-          <span style={styles.replayDivider} aria-hidden="true">
-            ·
-          </span>
-          <span style={styles.replayDetail}>{session.session_name}</span>
-          <span style={styles.replayDivider} aria-hidden="true">
-            ·
-          </span>
-          <span style={styles.replayDetail}>
-            {session.circuit_short_name}, {session.country_name}
-          </span>
-          <span style={styles.replayDivider} aria-hidden="true">
-            ·
-          </span>
-          <span style={styles.replayDetail}>{session.year}</span>
-          <span style={styles.replayNote}>
-            Showing most recent available session — no live session is active.
-          </span>
-        </div>
-      )}
-
       {/* Off-season state: session is null after a successful fetch (edge case). */}
       {session === null && !sessionLoading && (
         <div style={styles.offSeasonBanner} role="status">
@@ -622,57 +590,6 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     borderLeft: "1px solid #222222",
     overflowY: "auto",
-  },
-
-  // ── REPLAY banner ──────────────────────────────────────────────────────────
-  // High-visibility yellow strip rendered above the StatusBar when viewing
-  // historical / non-live session data.
-  replayBanner: {
-    display: "flex",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: "8px",
-    padding: "7px 16px",
-    backgroundColor: "#FFF200",
-    color: "#111111",
-    fontSize: "11px",
-    fontWeight: 700,
-    letterSpacing: "0.1em",
-    borderBottom: "1px solid #C8C000",
-    lineHeight: 1.4,
-  },
-  replayIcon: {
-    fontSize: "14px",
-    flexShrink: 0,
-  },
-  replayText: {
-    fontSize: "12px",
-    fontWeight: 900,
-    letterSpacing: "0.16em",
-    textTransform: "uppercase" as const,
-    flexShrink: 0,
-  },
-  replayDivider: {
-    color: "#666600",
-    flexShrink: 0,
-  },
-  replayDetail: {
-    fontSize: "11px",
-    fontWeight: 600,
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.08em",
-    flexShrink: 0,
-  },
-  replayNote: {
-    marginLeft: "auto",
-    fontSize: "10px",
-    fontWeight: 500,
-    color: "#555500",
-    letterSpacing: "0.04em",
-    fontStyle: "italic",
-    flexShrink: 0,
-    maxWidth: "360px",
-    textAlign: "right" as const,
   },
 
   // ── Off-season banner ──────────────────────────────────────────────────────

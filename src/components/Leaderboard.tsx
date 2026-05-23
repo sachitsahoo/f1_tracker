@@ -264,7 +264,6 @@ export default function Leaderboard({
   laps,
   currentLap,
   totalLaps,
-  isLive,
   retiredDrivers,
 }: LeaderboardProps) {
   // Build O(1) lookup maps — avoids Array.find() inside the render loop
@@ -305,7 +304,6 @@ export default function Leaderboard({
             {" / "}
             {totalLaps ?? "—"}
           </span>
-          {!isLive && <span style={styles.replayBadge}>REPLAY</span>}
         </div>
       </div>
 
@@ -635,20 +633,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#CCCCCC",
     fontWeight: 700,
   },
-  // Replay badge — amber, sharp edges
-  replayBadge: {
-    fontFamily: LABEL_FONT,
-    fontSize: "9px",
-    fontWeight: 800,
-    letterSpacing: "0.16em",
-    color: "#D97706",
-    backgroundColor: "#1A1200",
-    border: "1px solid #D97706",
-    padding: "2px 7px",
-    borderRadius: 0,
-    textTransform: "uppercase" as const,
-  },
-
   // ── Column header row
   colHeaderRow: {
     display: "flex",

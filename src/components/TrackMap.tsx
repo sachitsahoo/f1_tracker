@@ -578,8 +578,8 @@ export default function TrackMap({
         style={{ pointerEvents: "none" }}
       />
 
-      {/* ── Session badge — top-right corner ─────────────────────────────── */}
-      {isLive ? (
+      {/* ── Session badge — top-right corner (LIVE only; REPLAY badge lives in StatusBar) ── */}
+      {isLive && (
         <g aria-label="Live session">
           <rect
             x={BADGE_X - 56}
@@ -608,31 +608,6 @@ export default function TrackMap({
             letterSpacing={1.5}
           >
             LIVE
-          </text>
-        </g>
-      ) : (
-        <g aria-label="Replay session">
-          <rect
-            x={BADGE_X - 68}
-            y={BADGE_Y - 10}
-            width={68}
-            height={20}
-            fill="#1A1200"
-            stroke="#D97706"
-            strokeWidth={0.75}
-          />
-          <text
-            x={BADGE_X - 34}
-            y={BADGE_Y}
-            textAnchor="middle"
-            dominantBaseline="central"
-            fontSize={9}
-            fontFamily="'Inter', 'Roboto', sans-serif"
-            fontWeight="700"
-            fill="#D97706"
-            letterSpacing={1.5}
-          >
-            REPLAY
           </text>
         </g>
       )}
