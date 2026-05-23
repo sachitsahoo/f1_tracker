@@ -54,78 +54,66 @@ flowchart TD
 
 ## Engineering highlights
 
-### DNF, NC, and DNS classification without an API field
+### Polling and live-data architecture
 
-OpenF1 publishes no driver-classification field. After scanning all 89 sessions, `/race_control` carries zero retirement-indicator text. The fix is a **two-pass forward-looking detector** in `App.tsx`:
+**Eight typed hooks** in `src/hooks/`, each owns one polling concern: `useSession`, `useDrivers`, `usePositions`, `useLocations`, `useStints`, `useLaps`, `useRaceControl`, `useWeather`. Every hook returns `{ data, loading, error }` and pauses when `sessionKey` is null. Cadences sized to how often the underlying data actually changes:
 
-1. **Pass 1.** Walk all laps for the session to lock each driver's final status using a 4-lap gap threshold plus a 5-minute staleness window. The result is `DNF` (stopped circulating), `NC` (still circulating but under 90% race distance at the flag), or `DNS` (no green-flag lap).
-2. **Pass 2.** Reveal each status cutoff-aware as the replay scrubber advances. DNF reveals once the leader laps the driver. NC reveals only once the race actually finishes.
+| Endpoint                  | Cadence | What it drives                  |
+| ------------------------- | ------- | ------------------------------- |
+| `/location`               | 1 s     | Driver-dot positions on the map |
+| `/position`, `/intervals` | 4 s     | Order and gap-to-leader         |
+| `/race_control`           | 10 s    | FIA messages, flags, safety-car |
+| `/laps`, `/stints`        | 30 s    | Lap times, tire compounds       |
+| `/weather`                | 60 s    | Air/track temp, rainfall        |
 
-The forward-looking design means scrubber direction never flickers the status.
+All polling routes through a shared `useInterval` so no timer outlives its component (cleaned up on unmount). Live mode polls continuously. Historical replay does a one-shot fetch then idles. Driver-dot movement uses a `requestAnimationFrame` loop in replay that interpolates _along the SVG circuit path_ (not straight lines), and a CSS transition in live mode so the two animation strategies never compete.
 
-### Lap-boundary cutoff for replay state
+### Database and ingest pipeline
 
-Naive replay at "lap 12" would filter every table by `lap_number <= 12`, but that snapshots an inconsistent moment: faster drivers are already deep into lap 13 while backmarkers haven't crossed the lap-12 line yet. `lapCutoffDate(laps, lapNumber)` in `App.tsx` finds the _last_ driver to start lap N, adds their `lap_duration`, and uses that ISO timestamp as the global cutoff. Every cutoff-aware panel then snaps to the moment every driver has actually finished lap N, not a partial-lap snapshot.
+**Supabase Postgres**, eight tables (`sessions`, `drivers`, `positions`, `intervals`, `stints`, `laps`, `race_control`, `locations`), all FK-constrained back to `sessions` with `DEFERRABLE INITIALLY DEFERRED` so multi-table inserts inside a transaction don't deadlock on insertion order. **89 race sessions seeded, ~289 MB.**
 
-### Driver-dot animation follows the circuit path
+**Idempotent ingest** via unique-index + `ON CONFLICT DO NOTHING`. `scripts/seed.ts` is safe to re-run without duplicates. New tables added later get focused backfill scripts (`scripts/backfill-race-control.ts`, `scripts/patch-locations.ts`) following the same pattern. Per-driver, per-lap one-row-per-snapshot for location data (not raw 3.7 Hz telemetry) keeps the historical archive lean.
 
-In replay mode, each car needs to move from its lap-N position to its lap-(N+1) position when the scrubber advances. A naive `transform` transition would slide each dot in a straight line, cutting corners and going off-track. Instead, `TrackMap.tsx` runs a 600 ms `requestAnimationFrame` loop that interpolates each driver _along the actual circuit path_:
+The seed runs on a **daily Vercel Cron** with two soft-skip classes:
 
-- `findNearestIdx(normalizedPath, svgX, svgY)` maps the new raw X/Y to the closest point on the normalized SVG path (O(n) scan, fine for ~800 path points × 20 drivers at 60 fps).
-- `interpolateAlongPath(path, fromIdx, toIdx, t)` chooses the shorter arc (clockwise vs counter-clockwise) via modular arithmetic, which handles wrap-around across the start/finish line correctly.
-- Live mode swaps the rAF loop for an 800 ms CSS `transform` transition, smoothing the 1 Hz location polling without two competing animation systems fighting each other.
+- Future race weekends filtered upfront (`date_end < now()`) so the cron doesn't brick scheduled-but-unraced rows as "cancelled."
+- Partial OpenF1 data (404 on `/position`) rolls the transaction back _without_ marking the session processed, so the next cron retries instead of leaving the table half-populated.
 
-### JWT credentials stay off the client
+### Security
 
-OpenF1 sponsor tier uses username and password to fetch a JWT with a 1-hour TTL. Keeping the bearer token off the client:
+- **OpenF1 credentials never reach the browser.** The sponsor-tier flow is username + password to a JWT with a 1-hour TTL; the JWT is fetched on cold start inside `api/openf1-proxy.ts`, cached server-side, and injected as the `Authorization: Bearer` header before each request is forwarded. The SPA only ever sees `/api/openf1/<path>`.
+- **`/api/token` is Origin-gated** by an allowlist of deployed domains, so a malicious site can't reuse the proxy to drain the rate limit.
+- **Supabase service-role key is server-only.** Read by Vercel functions, never bundled into the client. Public anon key isn't used either (every read goes through an authenticated function).
 
-- All OpenF1 traffic from the SPA hits `/api/openf1/<path>` (rewritten by `vercel.json` to `api/openf1-proxy.ts`).
-- The Vercel function fetches a fresh JWT on cold start, caches it server-side, and injects the `Authorization: Bearer …` header before forwarding the request.
-- The browser sees only the proxy URL. Credentials live as Vercel env vars.
+### Rate limiting
 
-### Rate-limit-aware request fan-out
+OpenF1 sponsor tier caps at 6 req/s, 60 req/min. Cold-loading the page used to fire 7 concurrent requests on mount, breach the limit, and earn a 429 plus 60 seconds of back-off.
 
-Cold-loading the page used to fire 7 concurrent requests, breaching the 6 req/s sponsor limit, triggering a 429 and 60 seconds of back-off. `App.tsx` stages requests into three priority tiers, 200 ms apart.
+`App.tsx` stages the data hooks into **three priority tiers**, 200 ms apart:
 
 - **Tier 1 (t=0):** drivers, positions, intervals. Renders the leaderboard immediately.
 - **Tier 2 (t+200 ms):** stints, location stream. Tires and track map.
 - **Tier 3 (t+400 ms):** laps, race control, weather.
 
-Maximum concurrent requests in any 1-second window is 3, under the 6 req/s ceiling.
+Max concurrent requests in any 1-second window is 3, under the 6 req/s ceiling. `fetchWithRetry` in `src/api/openf1.ts` handles per-request **exponential backoff** on 429 so individual hooks recover gracefully if the ceiling is hit anyway.
 
-### Cutoff-aware replay across eight data hooks
+### UI iteration
 
-The replay scrubber emits a single ISO timestamp (`replayCutoff`). Every derived value in `App.tsx` is a `useMemo` keyed on that timestamp:
+The interface was built component-first and iterated screenshot-by-screenshot (visible in the commit history as a series of chunked PRs). Notable evolutions:
 
-```
-positions   intervals   laps   raceControl   weather
-retiredDrivers   fastestLap   bestSectors   stints   locations
-```
+- **Track map.** Started with a hardcoded `viewBox="0 0 800 500"`. Wide circuits like Miami and tall ones like Hungaroring letterboxed with dead-space wedges. Now the viewBox is computed per circuit from the actual bounds aspect ratio so every track fills its canvas tightly. SF marker brightened from a barely-visible 6 px icon.
+- **Timing tower.** Padded gap decimals to 3 places, added a zero-gap guard (renders `—` when OpenF1 publishes a stale `0`), softened row dividers from `#222` to `rgba(255,255,255,0.04)`, sticky FL chip beside the holder's abbreviation, flash-on-set purple on the LAST LAP cell, three-bar sector micro-chips (overall best / personal best / slower).
+- **StatusBar.** Killed three competing REPLAY indicators down to one. Race-control feed now snaps to word boundaries instead of CSS-clipping mid-word. Session title bumped 13 → 18 px, bar height 48 → 56 px. Added the weather pill (☀ / ☁ / 🌧 plus air temp, hover for track temp / humidity / wind).
+- **Scrubber.** Filled rail desaturated from F1-brand `#E8002D` to neutral `#888` so it stopped dominating every screenshot from the bottom edge.
+- **Driver dots.** Interpolate along the actual circuit path during scrub (not straight lines) so they never cut corners off-track.
 
-Each memo filters records with `date <= replayCutoff` (or `date_start` for laps) and rebuilds. Scrubbing back to lap 12 produces the exact state of every panel at that moment.
+### Stack decisions
 
-### Fastest-lap behavior
-
-Two layered indicators, mirroring F1 TV:
-
-- **Sticky FL chip** beside the driver's abbreviation. Persists across that driver's subsequent slower laps until someone beats the time.
-- **Flash-on-set purple** on the LAST LAP cell. Fires only on the lap where the time was actually set. Reverts when the driver completes a slower lap.
-
-Eligibility filters: `lap_number === 1` (standing-start grid launch is 8 to 15 seconds slower than racing pace) and `is_pit_out_lap === true` (outlaps not on race pace).
-
-### Sector micro-cells
-
-Three 18 by 3 pixel bars under each LAST LAP cell, color-coded:
-
-- **Purple.** Session-overall best for that sector.
-- **Green.** Driver's personal best (but not overall).
-- **Yellow.** Neither: pace dropped this sector vs. the driver's previous best.
-
-Computed in one walk of `/laps`, with a 1 ms tolerance to defend against backend rounding.
-
-### Dynamic circuit viewBox
-
-A hardcoded `viewBox="0 0 800 500"` letterboxes wide circuits (Miami) and tall ones (Hungaroring), leaving dead-space wedges around the circuit. The fix computes `innerW` and `innerH` per circuit from the actual bounds aspect ratio, targets the longer axis at 720 px so stroke widths and dot radii stay visually consistent across tracks, then sizes the SVG viewBox to match. Each circuit fills its bounding box tightly.
+- **No router.** Single-page SPA. The product is one view; a router would add weight for nothing.
+- **No Redux / Zustand / React-Query.** State is local to hooks, derived via `useMemo`, and propagated by props. The polling cadence + memo invalidation is simple enough that a global store would obscure the dataflow.
+- **`types/f1.ts` is the contract.** Every OpenF1 response shape is typed once; the API client, hook, and component all import from there. When OpenF1 added a new field this season, only the type file changed.
+- **MultiViewer for circuit data** instead of OpenF1's `/v1/circuits` so the SVG path fetch doesn't burn the 6 req/s rate-limit budget.
+- **In-memory location cache** on `api/location-snapshot.ts` (150-entry LRU) so the replay scrubber doesn't refetch OpenF1 every time the slider moves; debounce + cache hits keep prod under 1 req/s during heavy scrubbing.
 
 ---
 
