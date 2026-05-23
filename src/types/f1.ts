@@ -259,10 +259,19 @@ export interface LeaderboardProps {
   /**
    * Session-best lap time in seconds (cutoff-aware), or null when no
    * completed laps exist yet. When set, any row whose displayed LAST LAP
-   * value matches this within a 1-ms tolerance gets the broadcast-purple
-   * "fastest lap" treatment.
+   * value matches this within a 1-ms tolerance gets a brief purple
+   * highlight on the lap-time cell — broadcast convention for "this lap
+   * just set the session fastest".
    */
   fastestLapTime?: number | null;
+  /**
+   * driver_number of the driver currently holding the session-fastest lap,
+   * or null when none exists yet. Drives the sticky "FL" chip rendered
+   * beside the driver abbreviation — broadcast convention for "this driver
+   * holds the fastest lap of the session", which persists across their
+   * subsequent slower laps until someone else beats the time.
+   */
+  fastestLapDriverNumber?: number | null;
   /** Current lap number in the race. Null when unknown or off-season. */
   currentLap: number | null;
   /** Total scheduled race laps. Null when unknown. */

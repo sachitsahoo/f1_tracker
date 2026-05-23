@@ -296,6 +296,7 @@ export default function Leaderboard({
   totalLaps,
   retiredDrivers,
   fastestLapTime,
+  fastestLapDriverNumber,
 }: LeaderboardProps) {
   // Build O(1) lookup maps — avoids Array.find() inside the render loop
   const driverMap = new Map<number, Driver>(
@@ -455,6 +456,15 @@ export default function Leaderboard({
                       );
                     })()}
                     <span style={styles.abbreviation}>{abbrev}</span>
+                    {fastestLapDriverNumber === pos.driver_number && (
+                      <span
+                        style={styles.flChip}
+                        title="Session fastest lap"
+                        aria-label="Holds session fastest lap"
+                      >
+                        FL
+                      </span>
+                    )}
                   </span>
 
                   {/* Gap to leader — monospace, tabular */}
@@ -561,6 +571,15 @@ export default function Leaderboard({
                       );
                     })()}
                     <span style={styles.abbreviation}>{abbrev}</span>
+                    {fastestLapDriverNumber === pos.driver_number && (
+                      <span
+                        style={styles.flChip}
+                        title="Session fastest lap"
+                        aria-label="Holds session fastest lap"
+                      >
+                        FL
+                      </span>
+                    )}
                   </span>
 
                   {/* Gap — DNF/DNS show red "OUT", NC shows "+NL" laps down */}
@@ -828,9 +847,30 @@ const styles: Record<string, React.CSSProperties> = {
   },
   // ── Lap time when this row holds the session fastest — broadcast purple.
   // F1 graphics convention: purple = session-best, regardless of who's leading.
+  // Renders only on the lap where the time is set; reverts the next lap when
+  // the driver's most-recent lap is slower. The sticky "session-fastest holder"
+  // indicator is the FL chip below.
   lapTimeFastest: {
     color: "#B14BFF",
     fontWeight: 700,
+  },
+  // ── Fastest-lap holder chip — small purple "FL" badge next to the driver
+  // abbreviation. Sticks until someone else beats the session-fastest time,
+  // mirroring F1 broadcast convention.
+  flChip: {
+    fontFamily: LABEL_FONT,
+    fontSize: "8px",
+    fontWeight: 800,
+    letterSpacing: "0.08em",
+    color: "#B14BFF",
+    backgroundColor: "rgba(177, 75, 255, 0.12)",
+    border: "1px solid rgba(177, 75, 255, 0.55)",
+    padding: "1px 4px",
+    borderRadius: 0,
+    textTransform: "uppercase" as const,
+    flexShrink: 0,
+    lineHeight: 1,
+    marginLeft: "6px",
   },
   // ── Lap number cell — slightly dimmer than the time but same monospace
   lapNumberCell: {

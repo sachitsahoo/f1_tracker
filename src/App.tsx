@@ -211,19 +211,25 @@ export default function App() {
     return out;
   }, [laps, replayCutoff]);
 
-  // Session-best lap time in seconds (cutoff-aware). Walks ALL laps rather
-  // than `lapsByDriver` because the fastest lap may have happened earlier
-  // in the race for a driver whose CURRENT last lap is slower — in which
-  // case lapsByDriver[driver] no longer carries it. Leaderboard then
-  // highlights any row whose displayed LAST LAP equals this value.
-  const sessionFastestLap: number | null = useMemo(() => {
-    let min: number | null = null;
+  // Session-best lap (cutoff-aware): time + holding driver. Walks ALL laps
+  // rather than `lapsByDriver` because the fastest lap may have happened
+  // earlier in the race for a driver whose CURRENT last lap is slower — in
+  // which case lapsByDriver[driver] no longer carries it. Leaderboard uses
+  // the time for a brief cell-flash when a row's last lap matches it, and
+  // the driver_number for a sticky FL chip beside the abbreviation.
+  const sessionFastestLap = useMemo<{
+    time: number;
+    driverNumber: number;
+  } | null>(() => {
+    let best: { time: number; driverNumber: number } | null = null;
     for (const lap of laps) {
       if (lap.lap_duration == null) continue;
       if (replayCutoff !== null && lap.date_start > replayCutoff) continue;
-      if (min === null || lap.lap_duration < min) min = lap.lap_duration;
+      if (best === null || lap.lap_duration < best.time) {
+        best = { time: lap.lap_duration, driverNumber: lap.driver_number };
+      }
     }
-    return min;
+    return best;
   }, [laps, replayCutoff]);
 
   // Intervals to display — same cutoff logic.
@@ -527,7 +533,8 @@ export default function App() {
             totalLaps={totalLaps}
             isLive={isLive}
             retiredDrivers={retiredDriverNumbers}
-            fastestLapTime={sessionFastestLap}
+            fastestLapTime={sessionFastestLap?.time ?? null}
+            fastestLapDriverNumber={sessionFastestLap?.driverNumber ?? null}
           />
         </div>
       </div>
