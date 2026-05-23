@@ -4,7 +4,7 @@
 
 [**Live demo →**](https://f1-live-tracker.vercel.app)
 
-![F1 Live Tracker — 2025 British Grand Prix, Silverstone, wet weather, lap 2 with two early DNFs](docs/hero.png)
+![F1 Live Tracker — 2025 British Grand Prix, Silverstone, wet weather, lap 2 with two early DNFs](docs/example.png)
 
 https://github.com/user-attachments/assets/882b66b3-a962-4d6b-a722-1c3f2adda93c
 
