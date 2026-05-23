@@ -33,3 +33,4 @@ dist-ssr
 /supabase
 .vercel
 .env*.local
+graphify-out/
