@@ -31,18 +31,18 @@ https://github.com/user-attachments/assets/882b66b3-a962-4d6b-a722-1c3f2adda93c
 ## Architecture
 
 ```mermaid
-flowchart LR
+flowchart TD
   Browser["React SPA<br/>(Vite, TypeScript)"]
-  VF["Vercel Functions<br/>(Node 24)"]
-  SB[("Supabase<br/>Postgres<br/>89 sessions<br/>~289 MB")]
-  OF1["OpenF1<br/>sponsor tier"]
   MV["MultiViewer<br/>circuit paths"]
+  VF["Vercel Functions<br/>(Node 24)"]
+  SB[("Supabase Postgres<br/>89 sessions, ~289 MB")]
+  OF1["OpenF1<br/>sponsor tier"]
 
   Browser -->|"polls /api/* every 1-60 s"| VF
   Browser -->|"GET circuit SVG"| MV
   VF -->|"historical: SELECT"| SB
   VF -->|"live: JWT-injected proxy"| OF1
-  OF1 -.->|"username/password<br/>JWT (1 h TTL)<br/>cached server-side"| VF
+  OF1 -.->|"JWT (1 h TTL), cached server-side"| VF
 ```
 
 - **Frontend.** React SPA bundled by Vite. No framework router, one page. Eight typed data hooks (`useSession`, `usePositions`, `useLocations`, `useLaps`, `useStints`, `useRaceControl`, `useWeather`, `useCircuit`) own polling cadence and surface `{ data, loading, error }`.
