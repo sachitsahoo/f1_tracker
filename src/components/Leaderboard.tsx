@@ -220,10 +220,13 @@ function LeaderboardSkeleton() {
 // in the old standalone skeleton and have been removed.
 const skeletonStyles: Record<string, React.CSSProperties> = {
   row: {
+    flex: "1 1 0",
+    minHeight: "30px",
+    maxHeight: "52px",
     display: "flex",
     alignItems: "center",
     gap: "12px",
-    padding: "5px 16px 5px 12px",
+    padding: "0 16px 0 12px",
     borderBottom: "1px solid #1E1E1E",
     // 4px left gap to align with real rows that have a team-color border
     paddingLeft: "16px",
@@ -703,9 +706,17 @@ const styles: Record<string, React.CSSProperties> = {
     overflowY: "auto",
   },
   row: {
+    // Each row claims an equal share of remaining rows-container height
+    // (flex:1 1 0) so the full grid + DNF block fills the panel exactly —
+    // no internal scrollbar, no dead space at the bottom. minHeight is a
+    // floor (tire badge + breathing room) and maxHeight caps row growth
+    // on extra-tall viewports so rows never balloon into 80px stripes.
+    flex: "1 1 0",
+    minHeight: "30px",
+    maxHeight: "52px",
     display: "flex",
     alignItems: "center",
-    padding: "5px 16px 5px 12px",
+    padding: "0 16px 0 12px",
     borderBottom: "1px solid rgba(255,255,255,0.04)",
     transition: "background-color 0.3s ease, box-shadow 0.3s ease",
     // borderLeft is set dynamically per-row in team color
