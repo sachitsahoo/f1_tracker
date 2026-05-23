@@ -211,113 +211,136 @@ export default function App() {
 
   // Driver classification status — derived from /laps row shape per driver.
   //
-  // OpenF1 does NOT expose a classification field. All three statuses are
-  // inferred from /laps:
+  // Algorithm in two passes:
   //
-  //   DNS — Zero completed laps AND no lap row with a non-null date_start
-  //         (= a formation-lap entry that never transitioned to a
-  //         green-flag lap). DNS is determined any time the gap is
-  //         large enough.
+  //   Pass 1 (forward-looking): compute each driver's FINAL classification
+  //   using all available laps data (no cutoff). This locks in DNF / NC /
+  //   DNS based on what actually happened in the race.
   //
-  //   DNF — Gap >= DNF_LAP_GAP AND no completed lap in the last
-  //         STALE_LAP_S seconds of race time (the car has stopped
-  //         circulating). Stable across the rest of the race once
-  //         triggered — a driver who retires on lap 21 stays DNF for
-  //         every later scrubber position.
+  //   Pass 2 (cutoff-aware): for the current replay scrubber position,
+  //   reveal each driver's locked-in status only once the scrubber has
+  //   advanced past the relevant point:
+  //     - DNS: as soon as the race has started.
+  //     - DNF: once the cutoff leader-lap exceeds the driver's last
+  //            completed lap (= the moment the driver stopped circulating).
+  //     - NC:  only once the race has actually finished (leader has
+  //            reached totalLaps), since mid-race the driver is still
+  //            on track racing — they're just very lapped.
   //
-  //   NC  — Gap >= DNF_LAP_GAP AND still actively lapping (recent
-  //         completed lap) AND the race has ended (leader has reached
-  //         totalLaps). NC is a *final-classification* concept and only
-  //         applies once the chequered flag has fallen — mid-race
-  //         scrubbing of a lapped-but-circulating driver leaves them in
-  //         their normal position, not flagged.
+  // Why two passes: a one-pass cutoff-only detector would flicker. ALO's
+  // last completed lap is 20 of 58. At scrubber lap 22, gap is only 2, so
+  // a gap-only detector would leave him in the active leaderboard; the
+  // user then scrubs to lap 25 (gap 5) and he flips to DNF. Forward-looking
+  // status eliminates the flicker — ALO is DNF the moment the scrubber
+  // crosses lap 20.
   //
-  // Why "completed" laps (lap_duration non-null) rather than raw lap_number:
-  // every driver has a final "ghost" lap row with lap_duration=null. Using
-  // only timed laps gives an apples-to-apples comparison across the grid.
+  // OpenF1 does NOT expose a classification field — all three statuses
+  // are inferred from /laps (lap_duration nullness, date_start, lap
+  // timestamps).
   //
-  // Why 4 laps: modern F1 finishers can be up to 3 laps down (rare but
-  // happens — Perez Australia 2026). 4+ down is always a non-classifying
-  // result (DNF / NC / DNS).
+  // Why "completed" laps (lap_duration non-null): every driver has a
+  // final "ghost" lap row with lap_duration=null. Using only timed laps
+  // gives an apples-to-apples comparison across the grid.
   //
-  // Why 180s staleness: ~2.5x a typical lap. Tolerates a slow safety-car
-  // lap or long pit stop without prematurely flagging a still-running
-  // driver, but catches any genuine retirement well before the next lap
-  // would have been completed.
+  // Why 4 laps gap: modern F1 finishers can be up to 3 laps down (rare
+  // but happens — Perez Australia 2026). 4+ down is always a
+  // non-classifying result.
   //
-  // Replay cutoff: only laps started before the scrubber position are
-  // counted; race-finished test uses the leader's lap relative to
-  // totalLaps. So scrubbing forward never causes a status flip — once a
-  // driver goes DNF on lap N, they remain DNF for laps N+1, N+2, ...
+  // Why 300s NC window: a driver still circulating at the chequered flag
+  // will have completed a lap within the last ~minute of the leader's
+  // final lap. A mid-race retiree will be many minutes behind.
   const retiredDriverNumbers = useMemo<Map<number, DriverStatus>>(() => {
     if (laps.length === 0) return new Map();
 
     const DNF_LAP_GAP = 4;
-    const STALE_LAP_S = 180; // 3 min with no completed lap = stopped circulating
+    const NC_WINDOW_S = 300; // <= 5 min before leader's last lap = still circulating
 
-    // Per-driver: max completed lap number + timestamp; plus a set of
-    // drivers who had a green-flag lap start at all (for DNS vs DNF).
-    const maxTimedLap = new Map<number, { lap: number; date: string }>();
+    // ─── Pass 1: final classification from ALL laps ────────────────────────
+    const finalMaxLap = new Map<number, { lap: number; date: string }>();
     const hasStartedLap = new Set<number>();
     const allDrivers = new Set<number>();
 
     for (const lap of laps) {
-      if (replayCutoff !== null && lap.date_start > replayCutoff) continue;
       allDrivers.add(lap.driver_number);
       if (lap.date_start != null) hasStartedLap.add(lap.driver_number);
       if (lap.lap_duration == null) continue;
 
-      const prev = maxTimedLap.get(lap.driver_number);
+      const prev = finalMaxLap.get(lap.driver_number);
       if (prev === undefined || lap.lap_number > prev.lap) {
-        maxTimedLap.set(lap.driver_number, {
+        finalMaxLap.set(lap.driver_number, {
           lap: lap.lap_number,
           date: lap.date_start,
         });
       }
     }
 
-    // Leader = max completed lap across the grid; race clock = its timestamp.
-    let leaderLap = 0;
-    let raceClockMs = 0;
-    for (const v of maxTimedLap.values()) {
-      if (v.lap > leaderLap) {
-        leaderLap = v.lap;
-        raceClockMs = new Date(v.date).getTime();
+    let finalLeaderLap = 0;
+    let finalLeaderDateMs = 0;
+    for (const v of finalMaxLap.values()) {
+      if (v.lap > finalLeaderLap) {
+        finalLeaderLap = v.lap;
+        finalLeaderDateMs = new Date(v.date).getTime();
       }
     }
-    if (leaderLap < DNF_LAP_GAP) return new Map();
+    if (finalLeaderLap < DNF_LAP_GAP) return new Map();
 
-    const raceFinished = totalLaps != null && leaderLap >= totalLaps;
-
-    const out = new Map<number, DriverStatus>();
+    type FinalEntry = { status: DriverStatus; lastLap: number };
+    const finalStatus = new Map<number, FinalEntry>();
     for (const drv of allDrivers) {
-      const entry = maxTimedLap.get(drv);
+      const entry = finalMaxLap.get(drv);
       const completed = entry?.lap ?? 0;
-      if (leaderLap - completed < DNF_LAP_GAP) continue;
+      if (finalLeaderLap - completed < DNF_LAP_GAP) continue; // finisher
 
       // Zero completed laps AND no green-flag lap = DNS.
       if (completed === 0 && !hasStartedLap.has(drv)) {
-        out.set(drv, "DNS");
+        finalStatus.set(drv, { status: "DNS", lastLap: 0 });
+        continue;
+      }
+      if (entry === undefined) {
+        // Had a green-flag lap start but never completed one — rare
+        // (crashed on lap 1 mid-lap). Call it DNF.
+        finalStatus.set(drv, { status: "DNF", lastLap: 0 });
         continue;
       }
 
-      // Staleness: how long ago (in race time) did this driver last cross
-      // the start/finish line? A retired car has 0 progress while the
-      // leader keeps lapping, so the gap grows monotonically.
-      const driverMs = entry ? new Date(entry.date).getTime() : 0;
-      const stalenessS = (raceClockMs - driverMs) / 1000;
+      // Still circulating at the flag (within NC window) vs retired earlier.
+      const driverMs = new Date(entry.date).getTime();
+      const secBeforeEnd = (finalLeaderDateMs - driverMs) / 1000;
+      finalStatus.set(drv, {
+        status: secBeforeEnd <= NC_WINDOW_S ? "NC" : "DNF",
+        lastLap: completed,
+      });
+    }
 
-      if (stalenessS > STALE_LAP_S) {
-        // Hasn't completed a lap in 3+ min of race time → DNF.
-        out.set(drv, "DNF");
-      } else if (raceFinished) {
-        // Race is over and they're still lapping = NC (Not Classified).
-        out.set(drv, "NC");
+    // ─── Pass 2: reveal final statuses per the replay cutoff ───────────────
+    if (replayCutoff === null) {
+      // Live mode or scrubber at the end — show every final status.
+      const out = new Map<number, DriverStatus>();
+      for (const [drv, { status }] of finalStatus) out.set(drv, status);
+      return out;
+    }
+
+    // Compute the leader's completed lap at the cutoff.
+    let cutoffLeaderLap = 0;
+    for (const lap of laps) {
+      if (lap.date_start > replayCutoff) continue;
+      if (lap.lap_duration == null) continue;
+      if (lap.lap_number > cutoffLeaderLap) cutoffLeaderLap = lap.lap_number;
+    }
+    const raceFinished = totalLaps != null && cutoffLeaderLap >= totalLaps;
+
+    const out = new Map<number, DriverStatus>();
+    for (const [drv, { status, lastLap }] of finalStatus) {
+      if (status === "DNS") {
+        if (cutoffLeaderLap >= 1) out.set(drv, "DNS");
+      } else if (status === "DNF") {
+        // Show DNF as soon as the scrubber has advanced past the driver's
+        // last completed lap (= the moment they stopped circulating).
+        if (cutoffLeaderLap > lastLap) out.set(drv, "DNF");
+      } else if (status === "NC") {
+        // NC is a final classification — only show once the race is over.
+        if (raceFinished) out.set(drv, "NC");
       }
-      // Otherwise: still racing, just lapped 4+. Leave them in the active
-      // leaderboard at their current position; they'll become either NC
-      // (if race ends and they're still going) or DNF (if they later stop)
-      // automatically as more data arrives.
     }
     return out;
   }, [laps, replayCutoff, totalLaps]);
