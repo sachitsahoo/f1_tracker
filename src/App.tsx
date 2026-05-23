@@ -547,6 +547,17 @@ export default function App() {
         messages={displayMessages}
         sessions={sessions}
         onSessionChange={setUserPickedSession}
+        fastestLap={
+          sessionFastestLap
+            ? {
+                time: sessionFastestLap.time,
+                abbreviation:
+                  drivers.find(
+                    (d) => d.driver_number === sessionFastestLap.driverNumber,
+                  )?.name_acronym ?? String(sessionFastestLap.driverNumber),
+              }
+            : null
+        }
       />
 
       {/* ── Two-panel body ─────────────────────────────────────────────────── */}

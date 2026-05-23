@@ -327,6 +327,13 @@ export interface StatusBarProps {
   sessions?: Session[];
   /** Required when sessions is provided. */
   onSessionChange?: (session: Session) => void;
+  /**
+   * Session-best lap snapshot for the header FL chip. `null` while no
+   * driver has set an eligible lap yet (lap 1 + outlaps excluded).
+   * Drives a small purple "FL · 1:32.770 · NOR" pill in the StatusBar so
+   * the fastest-lap holder is visible without scanning the timing tower.
+   */
+  fastestLap?: { time: number; abbreviation: string } | null;
 }
 
 /** Props for the lap-based replay scrubber bar. */

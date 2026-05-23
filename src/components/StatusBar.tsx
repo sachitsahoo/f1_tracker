@@ -97,6 +97,18 @@ function truncateAtWordBoundary(text: string, maxChars: number): string {
  * Internally calls `useRaceControl` — no fetch/setInterval here.
  * All props are typed via `StatusBarProps` from `src/types/f1.ts`.
  */
+/**
+ * Format a lap_duration in seconds → "1:32.770".
+ * Shared with Leaderboard's identical helper but kept local to avoid a
+ * cross-component import for one helper.
+ */
+function formatLapTime(seconds: number): string {
+  const totalMs = Math.round(seconds * 1000);
+  const mins = Math.floor(totalMs / 60000);
+  const secs = (totalMs % 60000) / 1000;
+  return `${mins}:${secs.toFixed(3).padStart(6, "0")}`;
+}
+
 export default function StatusBar({
   session,
   currentLap,
@@ -105,6 +117,7 @@ export default function StatusBar({
   messages,
   sessions,
   onSessionChange,
+  fastestLap,
 }: StatusBarProps) {
   // Most recent message (messages are appended chronologically by App)
   const latestMessage: RaceControl | null =
@@ -166,13 +179,30 @@ export default function StatusBar({
         )}
       </div>
 
+      {/* ── Fastest-lap pill — sits between session info and race control.
+            Mirrors the FL chip in the leaderboard but adds the lap time so
+            the holder + their time are visible without scanning the timing
+            tower. Hidden when no eligible lap has been set yet. */}
+      {fastestLap && (
+        <div
+          style={styles.flPill}
+          aria-label={`Session fastest lap: ${formatLapTime(fastestLap.time)} by ${fastestLap.abbreviation}`}
+        >
+          <span style={styles.flPillLabel}>FL</span>
+          <span style={styles.flPillTime}>
+            {formatLapTime(fastestLap.time)}
+          </span>
+          <span style={styles.flPillDriver}>{fastestLap.abbreviation}</span>
+        </div>
+      )}
+
       {/*
        * ── Race control message ─────────────────────────────────────────────
        * Fills all available horizontal space between the session block and
        * the right-side badges. When no message exists, fall back to a flex
        * spacer so the layout doesn't collapse.
        *
-       * JS truncation has a generous 120-char budget — the CSS ellipsis on
+       * JS truncation has a generous 300-char budget — the CSS ellipsis on
        * .rcMessage is the real width clamp, snapping the rendered text to
        * whatever pixel width flex resolves to.
        */}
@@ -249,7 +279,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "16px",
     padding: "0 20px 0 0",
-    height: "48px",
+    height: "56px", // bumped 48→56 so the larger session title doesn't feel cramped
     borderLeft: "4px solid transparent",
     borderBottom: "1px solid #2A2A2A",
     transition: "background-color 0.5s ease, border-left-color 0.5s ease",
@@ -275,13 +305,13 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
   },
   sessionTitle: {
-    fontSize: "13px",
+    fontSize: "18px", // 13→18 so the circuit name dominates as the page's primary subject
     fontWeight: 700,
     color: "#FFFFFF",
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
-    letterSpacing: "0.06em",
+    letterSpacing: "0.05em",
     textTransform: "uppercase",
   },
   lapCounter: {
@@ -326,6 +356,39 @@ const styles: Record<string, React.CSSProperties> = {
     textOverflow: "ellipsis",
     maxWidth: "100%",
     letterSpacing: "0.04em",
+  },
+
+  // ── Fastest-lap pill — small purple capsule with "FL · 1:32.770 · NOR"
+  flPill: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "4px 10px",
+    border: "1px solid rgba(177, 75, 255, 0.55)",
+    backgroundColor: "rgba(177, 75, 255, 0.10)",
+    flexShrink: 0,
+    whiteSpace: "nowrap",
+  },
+  flPillLabel: {
+    fontSize: "9px",
+    fontWeight: 800,
+    letterSpacing: "0.16em",
+    color: "#B14BFF",
+    textTransform: "uppercase" as const,
+  },
+  flPillTime: {
+    fontFamily: "'Roboto Mono', 'Courier New', monospace",
+    fontSize: "12px",
+    fontWeight: 700,
+    color: "#EEEEEE",
+    fontVariantNumeric: "tabular-nums",
+    letterSpacing: "0.02em",
+  },
+  flPillDriver: {
+    fontSize: "11px",
+    fontWeight: 700,
+    color: "#AAAAAA",
+    letterSpacing: "0.1em",
   },
 
   // ── Track status badge (SC / VSC / RED FLAG / TRACK CLEAR)
