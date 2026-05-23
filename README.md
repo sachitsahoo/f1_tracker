@@ -63,6 +63,18 @@ OpenF1 publishes no driver-classification field. After scanning all 89 sessions,
 
 The forward-looking design means scrubber direction never flickers the status.
 
+### Lap-boundary cutoff for replay state
+
+Naive replay at "lap 12" would filter every table by `lap_number <= 12`, but that snapshots an inconsistent moment: faster drivers are already deep into lap 13 while backmarkers haven't crossed the lap-12 line yet. `lapCutoffDate(laps, lapNumber)` in `App.tsx` finds the _last_ driver to start lap N, adds their `lap_duration`, and uses that ISO timestamp as the global cutoff. Every cutoff-aware panel then snaps to the moment every driver has actually finished lap N, not a partial-lap snapshot.
+
+### Driver-dot animation follows the circuit path
+
+In replay mode, each car needs to move from its lap-N position to its lap-(N+1) position when the scrubber advances. A naive `transform` transition would slide each dot in a straight line, cutting corners and going off-track. Instead, `TrackMap.tsx` runs a 600 ms `requestAnimationFrame` loop that interpolates each driver _along the actual circuit path_:
+
+- `findNearestIdx(normalizedPath, svgX, svgY)` maps the new raw X/Y to the closest point on the normalized SVG path (O(n) scan, fine for ~800 path points × 20 drivers at 60 fps).
+- `interpolateAlongPath(path, fromIdx, toIdx, t)` chooses the shorter arc (clockwise vs counter-clockwise) via modular arithmetic, which handles wrap-around across the start/finish line correctly.
+- Live mode swaps the rAF loop for an 800 ms CSS `transform` transition, smoothing the 1 Hz location polling without two competing animation systems fighting each other.
+
 ### JWT credentials stay off the client
 
 OpenF1 sponsor tier uses username and password to fetch a JWT with a 1-hour TTL. Keeping the bearer token off the client:
