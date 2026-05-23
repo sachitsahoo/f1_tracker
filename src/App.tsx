@@ -154,7 +154,7 @@ export default function App() {
     isLive,
   ); // Tier 2 — +400ms
   const { stints: stintsArray } = useStints(tier2Key, isLive); // Tier 2 — +400ms
-  const { laps, totalLaps } = useLaps(tier3Key); // Tier 3 — +800ms
+  const { laps, totalLaps } = useLaps(tier3Key, isLive); // Tier 3 — +800ms
   const { messages } = useRaceControl(tier3Key, isLive); // Tier 3 — +800ms
   const { samples: weatherSamples } = useWeather(tier3Key, isLive); // Tier 3
 
