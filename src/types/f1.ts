@@ -121,6 +121,16 @@ export interface Lap {
   session_key: number;
 }
 
+// ─── Driver classification status ────────────────────────────────────────────
+
+/**
+ * Non-running status applied to drivers who didn't finish on the lead lap.
+ *   - "DNF" Did Not Finish (retired mid-race)
+ *   - "NC"  Not Classified (circulating at flag but <90% race distance)
+ *   - "DNS" Did Not Start  (no green-flag lap completed)
+ */
+export type DriverStatus = "DNF" | "NC" | "DNS";
+
 // ─── Live session proxy ───────────────────────────────────────────────────────
 
 /**
@@ -231,15 +241,21 @@ export interface LeaderboardProps {
    */
   laps: Record<number, Lap>;
   /**
-   * Driver numbers that have retired or DNF'd this session.
-   * Rows shown dimmed at the bottom of the leaderboard with a "DNF" marker.
-   * Derived from /laps data: counts only laps with non-null lap_duration
-   * (= laps the driver actually completed). Any driver whose last completed
-   * lap is 4 or more laps behind the race leader is treated as retired.
-   * OpenF1 does not expose a DNF flag and race_control text contains no
-   * retirement messages — lap drop-off is the only reliable signal.
+   * Drivers who didn't finish on the lead lap, mapped to their status:
+   *
+   *   - "DNF" — retired during the race (last completed lap is many minutes
+   *     before the leader's last lap, i.e. they stopped circulating early).
+   *   - "NC"  — Not Classified: still circulating when the chequered flag
+   *     fell but completed <90% of race distance (= 4+ laps behind).
+   *   - "DNS" — Did Not Start: car never completed a green-flag lap
+   *     (formation-lap incident or didn't make the grid).
+   *
+   * Rows shown dimmed at the bottom of the leaderboard with the matching
+   * label in place of the position number. OpenF1 does not expose a
+   * classification field, so all three statuses are derived from /laps
+   * row shape (lap_duration null/non-null, date_start null, timestamps).
    */
-  retiredDrivers?: Set<number>;
+  retiredDrivers?: Map<number, DriverStatus>;
   /** Current lap number in the race. Null when unknown or off-season. */
   currentLap: number | null;
   /** Total scheduled race laps. Null when unknown. */

@@ -434,11 +434,12 @@ export default function Leaderboard({
               );
             })}
 
-            {/* ── DNF / Retired rows ───────────────────────────────────────── */}
+            {/* ── DNF / NC / DNS rows ──────────────────────────────────────── */}
             {dnfPositions.map((pos) => {
               const driver = driverMap.get(pos.driver_number);
               const stint = stintMap[pos.driver_number];
               const lap = lapMap[pos.driver_number];
+              const status = retiredDrivers?.get(pos.driver_number) ?? "DNF";
 
               const teamColor = driver ? driverTeamColor(driver) : "#555555";
               const abbrev = driver?.name_acronym ?? String(pos.driver_number);
@@ -453,9 +454,9 @@ export default function Leaderboard({
                     opacity: 0.45,
                   }}
                   role="listitem"
-                  aria-label={`DNF ${abbrev}`}
+                  aria-label={`${status} ${abbrev}`}
                 >
-                  {/* DNF marker in place of position number */}
+                  {/* DNF / NC / DNS marker in place of position number */}
                   <span
                     style={{
                       ...styles.colPos,
@@ -463,7 +464,7 @@ export default function Leaderboard({
                       ...styles.dnfLabel,
                     }}
                   >
-                    DNF
+                    {status}
                   </span>
 
                   {/* Driver abbreviation + nationality flag */}
