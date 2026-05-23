@@ -194,6 +194,23 @@ export default function App() {
     return latestPerDriver(allPositions.filter((p) => p.date <= replayCutoff));
   }, [replayCutoff, positionsMap, allPositions]);
 
+  // Latest COMPLETED lap per driver (lap_duration != null), respecting
+  // the replay cutoff. Powers the LAST LAP column in the leaderboard.
+  // Previously a {} was passed in, so the column rendered "—" for
+  // everyone — dead code since whenever the column was first wired up.
+  const lapsByDriver: Record<number, Lap> = useMemo(() => {
+    const out: Record<number, Lap> = {};
+    for (const lap of laps) {
+      if (lap.lap_duration == null) continue;
+      if (replayCutoff !== null && lap.date_start > replayCutoff) continue;
+      const existing = out[lap.driver_number];
+      if (!existing || lap.lap_number > existing.lap_number) {
+        out[lap.driver_number] = lap;
+      }
+    }
+    return out;
+  }, [laps, replayCutoff]);
+
   // Intervals to display — same cutoff logic.
   const displayIntervals: Record<number, Interval> = useMemo(() => {
     if (replayCutoff === null) return intervals;
@@ -522,7 +539,7 @@ export default function App() {
             drivers={drivers}
             intervals={displayIntervals}
             stints={stintMap}
-            laps={{}}
+            laps={lapsByDriver}
             currentLap={!isLive ? replayLap : null}
             totalLaps={totalLaps}
             isLive={isLive}

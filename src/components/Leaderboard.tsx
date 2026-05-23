@@ -433,9 +433,14 @@ export default function Leaderboard({
                     <TireBadge compound={stint?.compound} age={age} />
                   </span>
 
-                  {/* Last lap time — monospace, tabular */}
+                  {/* Last lap time + dim "L<n>" subscript */}
                   <span style={{ ...styles.colLap, ...styles.lapTime }}>
-                    {formatLapTime(lap?.lap_duration ?? null)}
+                    <span>{formatLapTime(lap?.lap_duration ?? null)}</span>
+                    {lap?.lap_number != null && (
+                      <span style={styles.lapNumberSubscript}>
+                        L{lap.lap_number}
+                      </span>
+                    )}
                   </span>
                 </div>
               );
@@ -545,9 +550,14 @@ export default function Leaderboard({
                     <TireBadge compound={stint?.compound} age={age} />
                   </span>
 
-                  {/* Last lap time — monospace, tabular */}
+                  {/* Last lap time + dim "L<n>" subscript */}
                   <span style={{ ...styles.colLap, ...styles.lapTime }}>
-                    {formatLapTime(lap?.lap_duration ?? null)}
+                    <span>{formatLapTime(lap?.lap_duration ?? null)}</span>
+                    {lap?.lap_number != null && (
+                      <span style={styles.lapNumberSubscript}>
+                        L{lap.lap_number}
+                      </span>
+                    )}
                   </span>
                 </div>
               );
@@ -755,6 +765,16 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#BBBBBB",
     fontVariantNumeric: "tabular-nums",
     letterSpacing: "0.02em",
+    display: "flex",
+    alignItems: "baseline",
+    justifyContent: "flex-end",
+    gap: "5px",
+  },
+  // ── Dim "L25" subscript next to the lap time
+  lapNumberSubscript: {
+    color: "#666666",
+    fontSize: "9px",
+    letterSpacing: "0.04em",
   },
 
   // ── DNF label — red, small, in place of position number
