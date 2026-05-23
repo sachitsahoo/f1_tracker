@@ -217,6 +217,12 @@ export default function App() {
   // which case lapsByDriver[driver] no longer carries it. Leaderboard uses
   // the time for a brief cell-flash when a row's last lap matches it, and
   // the driver_number for a sticky FL chip beside the abbreviation.
+  //
+  // Eligibility rules — match F1 broadcast convention:
+  //   • Skip lap_number === 1 — the standing-start grid launch makes lap 1
+  //     8-15 s slower than racing pace; broadcasters never count it.
+  //   • Skip is_pit_out_lap === true — outlaps from pits aren't on race pace.
+  //   • Skip lap_duration == null — incomplete or invalidated.
   const sessionFastestLap = useMemo<{
     time: number;
     driverNumber: number;
@@ -224,6 +230,8 @@ export default function App() {
     let best: { time: number; driverNumber: number } | null = null;
     for (const lap of laps) {
       if (lap.lap_duration == null) continue;
+      if (lap.lap_number === 1) continue;
+      if (lap.is_pit_out_lap) continue;
       if (replayCutoff !== null && lap.date_start > replayCutoff) continue;
       if (best === null || lap.lap_duration < best.time) {
         best = { time: lap.lap_duration, driverNumber: lap.driver_number };
