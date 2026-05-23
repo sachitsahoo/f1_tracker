@@ -2,7 +2,7 @@
 
 **Real-time Formula 1 race tracker. Live driver positions on an SVG circuit map, broadcast-style timing tower, replay scrubber across 89 historical races.**
 
-[**Live demo →**](https://f1-live-tracker.vercel.app)
+[**Open the tracker →**](https://f1-live-tracker.vercel.app)
 
 ![F1 Live Tracker, 2025 British Grand Prix at Silverstone, wet weather, lap 2 with two early DNFs](docs/example.png)
 
