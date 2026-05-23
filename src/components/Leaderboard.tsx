@@ -295,6 +295,7 @@ export default function Leaderboard({
   currentLap,
   totalLaps,
   retiredDrivers,
+  fastestLapTime,
 }: LeaderboardProps) {
   // Build O(1) lookup maps — avoids Array.find() inside the render loop
   const driverMap = new Map<number, Driver>(
@@ -303,6 +304,14 @@ export default function Leaderboard({
   const intervalMap: Record<number, Interval> = intervals;
   const stintMap: Record<number, Stint> = stints;
   const lapMap: Record<number, Lap> = laps;
+
+  // Whether this row's most recent completed lap equals the session-best.
+  // Float tolerance (1 ms) avoids equality misses from any backend rounding;
+  // OpenF1's lap_duration values are 3-decimal seconds so 0.001 is safe.
+  const isFastestLapForRow = (lap: Lap | undefined): boolean =>
+    fastestLapTime != null &&
+    lap?.lap_duration != null &&
+    Math.abs(lap.lap_duration - fastestLapTime) < 0.001;
 
   // Split into running and retired groups
   const activePositions = retiredDrivers
@@ -471,8 +480,14 @@ export default function Leaderboard({
                     {lap?.lap_number ?? "—"}
                   </span>
 
-                  {/* Last lap time */}
-                  <span style={{ ...styles.colLap, ...styles.lapTime }}>
+                  {/* Last lap time — purple when this row holds the session fastest */}
+                  <span
+                    style={{
+                      ...styles.colLap,
+                      ...styles.lapTime,
+                      ...(isFastestLapForRow(lap) ? styles.lapTimeFastest : {}),
+                    }}
+                  >
                     {formatLapTime(lap?.lap_duration ?? null)}
                   </span>
                 </div>
@@ -590,8 +605,14 @@ export default function Leaderboard({
                     {lap?.lap_number ?? "—"}
                   </span>
 
-                  {/* Last lap time */}
-                  <span style={{ ...styles.colLap, ...styles.lapTime }}>
+                  {/* Last lap time — purple when this row holds the session fastest */}
+                  <span
+                    style={{
+                      ...styles.colLap,
+                      ...styles.lapTime,
+                      ...(isFastestLapForRow(lap) ? styles.lapTimeFastest : {}),
+                    }}
+                  >
                     {formatLapTime(lap?.lap_duration ?? null)}
                   </span>
                 </div>
@@ -804,6 +825,12 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#BBBBBB",
     fontVariantNumeric: "tabular-nums",
     letterSpacing: "0.02em",
+  },
+  // ── Lap time when this row holds the session fastest — broadcast purple.
+  // F1 graphics convention: purple = session-best, regardless of who's leading.
+  lapTimeFastest: {
+    color: "#B14BFF",
+    fontWeight: 700,
   },
   // ── Lap number cell — slightly dimmer than the time but same monospace
   lapNumberCell: {

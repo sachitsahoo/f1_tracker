@@ -256,6 +256,13 @@ export interface LeaderboardProps {
    * row shape (lap_duration null/non-null, date_start null, timestamps).
    */
   retiredDrivers?: Map<number, DriverStatus>;
+  /**
+   * Session-best lap time in seconds (cutoff-aware), or null when no
+   * completed laps exist yet. When set, any row whose displayed LAST LAP
+   * value matches this within a 1-ms tolerance gets the broadcast-purple
+   * "fastest lap" treatment.
+   */
+  fastestLapTime?: number | null;
   /** Current lap number in the race. Null when unknown or off-season. */
   currentLap: number | null;
   /** Total scheduled race laps. Null when unknown. */

@@ -211,6 +211,21 @@ export default function App() {
     return out;
   }, [laps, replayCutoff]);
 
+  // Session-best lap time in seconds (cutoff-aware). Walks ALL laps rather
+  // than `lapsByDriver` because the fastest lap may have happened earlier
+  // in the race for a driver whose CURRENT last lap is slower — in which
+  // case lapsByDriver[driver] no longer carries it. Leaderboard then
+  // highlights any row whose displayed LAST LAP equals this value.
+  const sessionFastestLap: number | null = useMemo(() => {
+    let min: number | null = null;
+    for (const lap of laps) {
+      if (lap.lap_duration == null) continue;
+      if (replayCutoff !== null && lap.date_start > replayCutoff) continue;
+      if (min === null || lap.lap_duration < min) min = lap.lap_duration;
+    }
+    return min;
+  }, [laps, replayCutoff]);
+
   // Intervals to display — same cutoff logic.
   const displayIntervals: Record<number, Interval> = useMemo(() => {
     if (replayCutoff === null) return intervals;
@@ -512,6 +527,7 @@ export default function App() {
             totalLaps={totalLaps}
             isLive={isLive}
             retiredDrivers={retiredDriverNumbers}
+            fastestLapTime={sessionFastestLap}
           />
         </div>
       </div>
