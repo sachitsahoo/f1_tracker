@@ -6,7 +6,7 @@
 
 ![F1 Live Tracker — 2025 British Grand Prix, Silverstone, wet weather, lap 2 with two early DNFs](docs/hero.png)
 
-<video src="docs/demo.mp4" autoplay loop muted playsinline width="100%"></video>
+https://github.com/user-attachments/assets/882b66b3-a962-4d6b-a722-1c3f2adda93c
 
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
