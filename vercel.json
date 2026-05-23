@@ -1,8 +1,8 @@
 {
   "rewrites": [
     {
-      "source": "/api/openf1/:path*",
-      "destination": "/api/openf1-proxy?path=:path*"
+      "source": "/api/openf1/:path(.*)",
+      "destination": "/api/openf1-proxy?path=:path"
     }
   ],
   "functions": {
