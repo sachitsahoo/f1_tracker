@@ -233,9 +233,10 @@ export interface LeaderboardProps {
   /**
    * Driver numbers that have retired or DNF'd this session.
    * Rows shown dimmed at the bottom of the leaderboard with a "DNF" marker.
-   * Derived from /laps data: any driver whose highest completed lap is
-   * 3 or more laps behind the race leader is treated as retired. OpenF1
-   * does not expose a DNF flag and race_control text contains no
+   * Derived from /laps data: counts only laps with non-null lap_duration
+   * (= laps the driver actually completed). Any driver whose last completed
+   * lap is 4 or more laps behind the race leader is treated as retired.
+   * OpenF1 does not expose a DNF flag and race_control text contains no
    * retirement messages — lap drop-off is the only reliable signal.
    */
   retiredDrivers?: Set<number>;

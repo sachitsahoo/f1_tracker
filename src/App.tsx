@@ -212,40 +212,60 @@ export default function App() {
   //
   // OpenF1 does NOT expose a DNF flag and the race_control feed contains
   // zero retirement-indicator messages (verified across all 89 seeded
-  // sessions — see commit history). The OpenF1 maintainer confirms the
-  // only reliable signal is data drop-off in /laps or /intervals.
+  // sessions). The OpenF1 maintainer confirms the only reliable signal
+  // is data drop-off in /laps or /intervals.
   //
-  // Rule: any driver whose highest completed lap is >= DNF_LAP_GAP behind
-  // the race leader is treated as retired. Lap rows are only emitted when
-  // a driver crosses the start/finish line, so a stopped car simply stops
-  // accumulating laps while the leader keeps going. 3 laps is conservative
-  // — it tolerates a long pit stop or one slow lap behind a safety car
-  // without false-positives, but catches every real retirement within
-  // ~5 minutes of it happening.
+  // Rule: count each driver's last COMPLETED lap (= the highest lap_number
+  // whose lap_duration is non-null). Any driver whose last completed lap
+  // is >= DNF_LAP_GAP behind the race leader is treated as retired.
   //
-  // Respects the replay cutoff: only laps started before the scrubber
-  // position are counted, so retirements appear on the leaderboard
-  // exactly when the scrubber crosses the retirement lap.
+  // Why "completed" instead of just lap_number:
+  //   - DNFs almost always have an extra lap row with lap_duration=null
+  //     (the in-progress lap they crashed on)
+  //   - Finishers' final lap row also has lap_duration=null (the
+  //     chequered-flag lap is rendered without a duration in the data)
+  //   So counting only timed laps gives an apples-to-apples comparison
+  //   between "laps actually completed" across the whole grid.
+  //
+  // Why 4 laps:
+  //   In modern F1 a finisher can be up to 3 laps down (rare but happens —
+  //   see Perez Australia 2026). 4+ down has never been a genuine finisher
+  //   in the seeded data — it always means the car retired earlier.
+  //
+  // DNS handling: a driver who never started (formation-lap crash, no
+  // green-flag lap) has zero timed laps, so they appear with gap = leader,
+  // which exceeds the threshold and they're correctly flagged.
+  //
+  // Replay cutoff: only laps started before the scrubber position are
+  // counted, so DNFs appear on the leaderboard exactly when the scrubber
+  // crosses the retirement lap.
   const retiredDriverNumbers = useMemo<Set<number>>(() => {
     if (laps.length === 0) return new Set();
 
-    const DNF_LAP_GAP = 3;
-    const maxLap: Record<number, number> = {};
+    const DNF_LAP_GAP = 4;
+
+    // All drivers who have any lap row at all — needed so DNS cases
+    // (zero timed laps) still appear in the comparison.
+    const allDrivers = new Set<number>();
+    const maxTimedLap: Record<number, number> = {};
     for (const lap of laps) {
       if (replayCutoff !== null && lap.date_start > replayCutoff) continue;
-      const prev = maxLap[lap.driver_number];
+      allDrivers.add(lap.driver_number);
+      if (lap.lap_duration == null) continue;
+      const prev = maxTimedLap[lap.driver_number];
       if (prev === undefined || lap.lap_number > prev) {
-        maxLap[lap.driver_number] = lap.lap_number;
+        maxTimedLap[lap.driver_number] = lap.lap_number;
       }
     }
 
-    const leaderLap = Math.max(0, ...Object.values(maxLap));
+    const leaderLap = Math.max(0, ...Object.values(maxTimedLap));
     // Race hasn't gotten going yet — don't flag anyone.
     if (leaderLap < DNF_LAP_GAP) return new Set();
 
     const out = new Set<number>();
-    for (const [drv, last] of Object.entries(maxLap)) {
-      if (leaderLap - last >= DNF_LAP_GAP) out.add(Number(drv));
+    for (const drv of allDrivers) {
+      const last = maxTimedLap[drv] ?? 0;
+      if (leaderLap - last >= DNF_LAP_GAP) out.add(drv);
     }
     return out;
   }, [laps, replayCutoff]);
