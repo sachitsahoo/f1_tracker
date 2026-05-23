@@ -178,7 +178,7 @@ export default function StatusBar({
         >
           <span style={styles.rcLabel}>RACE CONTROL</span>
           <span style={styles.rcMessage}>
-            {truncateAtWordBoundary(latestMessage.message, 56)}
+            {truncateAtWordBoundary(latestMessage.message, 50)}
           </span>
         </div>
       )}
@@ -286,7 +286,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     gap: "1px",
-    maxWidth: "400px",
+    maxWidth: "480px",
     overflow: "hidden",
     padding: "0 12px",
     borderLeft: "1px solid #2A2A2A",
