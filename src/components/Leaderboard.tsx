@@ -283,6 +283,13 @@ export default function Leaderboard({
     ? positions.filter((p) => retiredDrivers.has(p.driver_number))
     : [];
 
+  // For NC drivers we display laps-down (e.g. "+15L") instead of "OUT".
+  // The race leader's lap number is the highest lap_number across the grid.
+  const leaderLap = Math.max(
+    0,
+    ...Object.values(lapMap).map((l) => l.lap_number),
+  );
+
   return (
     <div style={styles.container}>
       {/* Inject shimmer keyframes once */}
@@ -503,16 +510,35 @@ export default function Leaderboard({
                     <span style={styles.abbreviation}>{abbrev}</span>
                   </span>
 
-                  {/* Gap replaced with OUT */}
-                  <span
-                    style={{
-                      ...styles.colGap,
-                      ...styles.gapText,
-                      ...styles.dnfOut,
-                    }}
-                  >
-                    OUT
-                  </span>
+                  {/* Gap — DNF/DNS show red "OUT", NC shows "+NL" laps down */}
+                  {(() => {
+                    if (status === "NC") {
+                      const driverLap =
+                        lapMap[pos.driver_number]?.lap_number ?? 0;
+                      const lapsDown = Math.max(0, leaderLap - driverLap);
+                      return (
+                        <span
+                          style={{
+                            ...styles.colGap,
+                            ...styles.gapText,
+                          }}
+                        >
+                          {`+${lapsDown}L`}
+                        </span>
+                      );
+                    }
+                    return (
+                      <span
+                        style={{
+                          ...styles.colGap,
+                          ...styles.gapText,
+                          ...styles.dnfOut,
+                        }}
+                      >
+                        OUT
+                      </span>
+                    );
+                  })()}
 
                   {/* Tire compound circle + age */}
                   <span style={styles.colTire}>
