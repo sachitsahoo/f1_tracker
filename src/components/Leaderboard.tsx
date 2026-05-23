@@ -621,6 +621,8 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     display: "flex",
     flexDirection: "column",
+    flex: "1 1 auto", // fill the leaderboardPanel's height — kills the empty space below the table
+    minHeight: 0, // allows the rows child (flex:1 + overflow:auto) to actually scroll instead of pushing parent
     minWidth: "420px",
     boxShadow: "0 0 0 1px #1E1E1E, 0 8px 32px rgba(0,0,0,0.8)",
   },
@@ -686,12 +688,19 @@ const styles: Record<string, React.CSSProperties> = {
   colLapNum: { width: "36px", flexShrink: 0, textAlign: "right" as const },
   colLap: { width: "76px", flexShrink: 0, textAlign: "right" as const },
 
-  // ── Rows — sharp edges, barely-visible rgba dividers, 300ms transition
+  // ── Rows — fills available height after the header + column-header row.
+  // Header stays pinned at the top of the panel because the `container` is a
+  // flex column and only this child has flex-grow. If the 20+ rows overflow
+  // the available height, scrolling happens here (overflowY:auto), not on
+  // the panel — so the team title and column labels never scroll out of view.
+  // minHeight:0 is the load-bearing line: without it the flex item refuses to
+  // shrink below its content size and the parent panel scrolls instead.
   rows: {
     display: "flex",
     flexDirection: "column",
+    flex: "1 1 auto",
+    minHeight: 0,
     overflowY: "auto",
-    maxHeight: "640px",
   },
   row: {
     display: "flex",
