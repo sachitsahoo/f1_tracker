@@ -932,14 +932,15 @@ const styles: Record<string, React.CSSProperties> = {
 
   // ── LAST LAP cell wrapper — vertical stack of [lap time, sector chips]
   // so the chips render under the time inside the same column (no panel
-  // resize needed).
+  // resize needed). NOTE: do NOT set width here — this is spread AFTER
+  // styles.colLap on the same element, and any explicit width would
+  // override colLap's 76px column width and push the row layout off.
   lastLapStack: {
     display: "flex",
     flexDirection: "column",
     alignItems: "flex-end",
     justifyContent: "center",
     gap: "3px",
-    width: "100%",
   },
 
   // ── Lap time — monospace, tabular-nums
