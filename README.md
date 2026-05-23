@@ -20,7 +20,7 @@ https://github.com/user-attachments/assets/882b66b3-a962-4d6b-a722-1c3f2adda93c
 ## What it does
 
 - Driver positions update **every second** on an SVG circuit map sized to each track's natural aspect ratio.
-- Broadcast-style timing tower: gap to leader, current tire compound and age, last lap time with **fastest-lap purple** plus **per-sector micro-chips** (overall best, personal best, or slower).
+- Timing tower: gap to leader, current tire compound and age, last lap time with **fastest-lap purple**, and **per-sector micro-chips** (overall best, personal best, or slower).
 - **Replay scrubber** across 89 historical race weekends from 2023 to 2025, with safety-car and red-flag event markers on the rail.
 - **DNF, NC, and DNS classification** inferred from `/laps` data. OpenF1 does not expose a classification field, so the app derives it from lap-count gaps and duration timestamps.
 - Live weather pill: air temperature plus a sky icon, with track temperature, humidity, and wind on hover.
@@ -54,34 +54,34 @@ flowchart LR
 
 ## Engineering highlights
 
-#### DNF, NC, and DNS classification without an API field
+### DNF, NC, and DNS classification without an API field
 
 OpenF1 publishes no driver-classification field. After scanning all 89 sessions, `/race_control` carries zero retirement-indicator text. The fix is a **two-pass forward-looking detector** in `App.tsx`:
 
 1. **Pass 1.** Walk all laps for the session to lock each driver's final status using a 4-lap gap threshold plus a 5-minute staleness window. The result is `DNF` (stopped circulating), `NC` (still circulating but under 90% race distance at the flag), or `DNS` (no green-flag lap).
 2. **Pass 2.** Reveal each status cutoff-aware as the replay scrubber advances. DNF reveals once the leader laps the driver. NC reveals only once the race actually finishes.
 
-The forward-looking design means scrubber direction never flickers the status. No oscillation between NC and DNF as the user drags.
+The forward-looking design means scrubber direction never flickers the status.
 
-#### JWT credentials stay off the client
+### JWT credentials stay off the client
 
-OpenF1 sponsor tier uses username and password to fetch a JWT with a 1-hour TTL. Easy mistake: ship the credentials to the browser. Instead:
+OpenF1 sponsor tier uses username and password to fetch a JWT with a 1-hour TTL. Keeping the bearer token off the client:
 
 - All OpenF1 traffic from the SPA hits `/api/openf1/<path>` (rewritten by `vercel.json` to `api/openf1-proxy.ts`).
 - The Vercel function fetches a fresh JWT on cold start, caches it server-side, and injects the `Authorization: Bearer …` header before forwarding the request.
 - The browser sees only the proxy URL. Credentials live as Vercel env vars.
 
-#### Rate-limit-aware request fan-out
+### Rate-limit-aware request fan-out
 
-Cold-loading the page used to fire 7 concurrent requests, breaching the 6 req/s sponsor limit, triggering a 429, and 60 seconds of back-off. Fix in `App.tsx`: three priority tiers, staggered 200 ms apart.
+Cold-loading the page used to fire 7 concurrent requests, breaching the 6 req/s sponsor limit, triggering a 429 and 60 seconds of back-off. `App.tsx` stages requests into three priority tiers, 200 ms apart.
 
-- **Tier 1 (t=0):** drivers, positions, intervals. Needed for the leaderboard above the fold.
+- **Tier 1 (t=0):** drivers, positions, intervals. Renders the leaderboard immediately.
 - **Tier 2 (t+200 ms):** stints, location stream. Tires and track map.
 - **Tier 3 (t+400 ms):** laps, race control, weather.
 
-Maximum concurrent requests in any 1-second window is 3, well under the 6 req/s ceiling.
+Maximum concurrent requests in any 1-second window is 3, under the 6 req/s ceiling.
 
-#### Cutoff-aware replay across eight data hooks
+### Cutoff-aware replay across eight data hooks
 
 The replay scrubber emits a single ISO timestamp (`replayCutoff`). Every derived value in `App.tsx` is a `useMemo` keyed on that timestamp:
 
@@ -90,20 +90,20 @@ positions   intervals   laps   raceControl   weather
 retiredDrivers   fastestLap   bestSectors   stints   locations
 ```
 
-Each memo filters records with `date <= replayCutoff` (or `date_start` for laps) and rebuilds. Scrubbing back to lap 12 produces the exact state of every panel at that moment, with no stale data leaking forward.
+Each memo filters records with `date <= replayCutoff` (or `date_start` for laps) and rebuilds. Scrubbing back to lap 12 produces the exact state of every panel at that moment.
 
-#### Broadcast-accurate fastest-lap behavior
+### Fastest-lap behavior
 
 Two layered indicators, mirroring F1 TV:
 
 - **Sticky FL chip** beside the driver's abbreviation. Persists across that driver's subsequent slower laps until someone beats the time.
 - **Flash-on-set purple** on the LAST LAP cell. Fires only on the lap where the time was actually set. Reverts when the driver completes a slower lap.
 
-Eligibility filters: `lap_number === 1` (standing-start grid launch is 8 to 15 seconds slower than racing pace, never the fastest) and `is_pit_out_lap === true` (outlaps not on race pace).
+Eligibility filters: `lap_number === 1` (standing-start grid launch is 8 to 15 seconds slower than racing pace) and `is_pit_out_lap === true` (outlaps not on race pace).
 
-#### Sector micro-cells
+### Sector micro-cells
 
-Three 18 by 3 pixel bars under each LAST LAP cell, color-coded broadcast-style:
+Three 18 by 3 pixel bars under each LAST LAP cell, color-coded:
 
 - **Purple.** Session-overall best for that sector.
 - **Green.** Driver's personal best (but not overall).
@@ -111,9 +111,9 @@ Three 18 by 3 pixel bars under each LAST LAP cell, color-coded broadcast-style:
 
 Computed in one walk of `/laps`, with a 1 ms tolerance to defend against backend rounding.
 
-#### Dynamic circuit viewBox
+### Dynamic circuit viewBox
 
-A hardcoded `viewBox="0 0 800 500"` letterboxes wide circuits (Miami) and tall ones (Hungaroring), leaving dead-space wedges that read as "unfinished" in screenshots. Fix: compute `innerW` and `innerH` per circuit from the actual bounds aspect ratio, target the longer axis at 720 px so stroke widths and dot radii stay visually consistent across tracks, then size the SVG viewBox to match. Each circuit now fills its bounding box tightly.
+A hardcoded `viewBox="0 0 800 500"` letterboxes wide circuits (Miami) and tall ones (Hungaroring), leaving dead-space wedges around the circuit. The fix computes `innerW` and `innerH` per circuit from the actual bounds aspect ratio, targets the longer axis at 720 px so stroke widths and dot radii stay visually consistent across tracks, then sizes the SVG viewBox to match. Each circuit fills its bounding box tightly.
 
 ---
 
