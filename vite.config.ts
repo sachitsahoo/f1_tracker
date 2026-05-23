@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import type { Plugin, ViteDevServer } from "vite";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -157,20 +157,130 @@ function openf1ProxyPlugin(): Plugin {
   };
 }
 
+// ─── /api/location-snapshot dev plugin ───────────────────────────────────────
+//
+// Mirrors api/location-snapshot.ts (the prod Vercel function) so `npm run dev`
+// works standalone, without a second terminal running `vercel dev` on :3000.
+//
+// Historical telemetry is immutable, so we keep an in-memory cache keyed by
+// (session_key, date_gt, date_lt). Cache lives for the lifetime of the dev
+// server process — fine for development.
+
+const locationSnapshotCache = new Map<string, unknown>();
+const LOCATION_SNAPSHOT_CACHE_MAX = 150;
+
+function locationSnapshotPlugin(): Plugin {
+  return {
+    name: "location-snapshot-dev",
+    apply: "serve",
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use(
+        "/api/location-snapshot",
+        async (req: IncomingMessage, res: ServerResponse) => {
+          if (req.method !== "GET") {
+            res.writeHead(405, { Allow: "GET" });
+            res.end(JSON.stringify({ error: "Only GET is supported" }));
+            return;
+          }
+
+          // Parse query off req.url. The mount point trims "/api/location-snapshot"
+          // so req.url is like "?session_key=…&date_gt=…&date_lt=…".
+          const url = new URL(req.url ?? "", "http://localhost");
+          const sessionKeyRaw = url.searchParams.get("session_key");
+          const dateGt = url.searchParams.get("date_gt") ?? "";
+          const dateLt = url.searchParams.get("date_lt") ?? "";
+
+          const sessionKey = Number(sessionKeyRaw);
+          if (!Number.isInteger(sessionKey) || sessionKey <= 0) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: "session_key must be a positive integer",
+              }),
+            );
+            return;
+          }
+
+          const cacheKey = `${sessionKey}:${dateGt}:${dateLt}`;
+          if (locationSnapshotCache.has(cacheKey)) {
+            res.writeHead(200, {
+              "Content-Type": "application/json",
+              "Cache-Control": "public, max-age=86400, immutable",
+            });
+            res.end(JSON.stringify(locationSnapshotCache.get(cacheKey)));
+            return;
+          }
+
+          const token = await getDevToken();
+          if (!token) {
+            res.writeHead(503, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({ error: "Auth credentials not configured" }),
+            );
+            return;
+          }
+
+          // OpenF1 requires literal `date>` / `date<` operators — not percent-encoded.
+          let upstreamUrl = `https://api.openf1.org/v1/location?session_key=${sessionKey}`;
+          if (dateGt) upstreamUrl += `&date>${dateGt}`;
+          if (dateLt) upstreamUrl += `&date<${dateLt}`;
+
+          try {
+            const upstreamRes = await fetch(upstreamUrl, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!upstreamRes.ok) {
+              res.writeHead(502, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  error: `OpenF1 returned ${upstreamRes.status}`,
+                }),
+              );
+              return;
+            }
+            const data = (await upstreamRes.json()) as unknown;
+
+            if (locationSnapshotCache.size >= LOCATION_SNAPSHOT_CACHE_MAX) {
+              const oldest = locationSnapshotCache.keys().next().value;
+              if (oldest !== undefined) locationSnapshotCache.delete(oldest);
+            }
+            locationSnapshotCache.set(cacheKey, data);
+
+            res.writeHead(200, {
+              "Content-Type": "application/json",
+              "Cache-Control": "public, max-age=86400, immutable",
+            });
+            res.end(JSON.stringify(data));
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            res.writeHead(502, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: `Upstream fetch failed: ${msg}` }));
+          }
+        },
+      );
+    },
+  };
+}
+
 // ─── Vite config ──────────────────────────────────────────────────────────────
 
-export default defineConfig({
-  plugins: [react(), openf1TokenPlugin(), openf1ProxyPlugin()],
-  server: {
-    proxy: {
-      // /api/location-snapshot is a Vercel function (server-side caching proxy
-      // to OpenF1). Under `vercel dev` it is served automatically. Under
-      // `npm run dev` this proxy forwards the request to the Vercel dev server
-      // running on port 3000.
-      "/api/location-snapshot": {
-        target: "http://localhost:3000",
-        changeOrigin: true,
-      },
-    },
-  },
+export default defineConfig(({ mode }) => {
+  // Vite only auto-exposes VITE_-prefixed vars to client code; it does NOT
+  // populate process.env from .env files. Server-side middleware in this file
+  // (openf1TokenPlugin / openf1ProxyPlugin) reads OPENF1_USERNAME/PASSWORD via
+  // process.env, so we load every key from .env / .env.local and merge it in.
+  // The empty-string prefix tells loadEnv to return all keys, not just VITE_*.
+  const env = loadEnv(mode, process.cwd(), "");
+  for (const [key, value] of Object.entries(env)) {
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
+
+  return {
+    plugins: [
+      react(),
+      openf1TokenPlugin(),
+      openf1ProxyPlugin(),
+      locationSnapshotPlugin(),
+    ],
+  };
 });
