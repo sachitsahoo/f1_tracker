@@ -7,14 +7,26 @@ import type { TrackMapProps } from "../types/f1";
 
 // ─── SVG viewport constants ───────────────────────────────────────────────────
 
-const SVG_WIDTH = 800;
-const SVG_HEIGHT = 500;
+/**
+ * Target size (px) for the longer of the two inner-area axes. Picked so that
+ * stroke widths and dot radii (which are absolute viewBox units) look
+ * consistent across circuits of different aspect ratios. The shorter axis is
+ * computed per-circuit so the SVG viewBox tracks the circuit's natural shape
+ * rather than letterboxing it inside a hardcoded 1.6:1 rectangle.
+ */
+const TARGET_MAX_INNER_DIM = 720;
 
 /** Padding (px) around the inner drawing area so dots never clip the edge. */
 const PADDING = 40;
 
-const INNER_WIDTH = SVG_WIDTH - PADDING * 2;
-const INNER_HEIGHT = SVG_HEIGHT - PADDING * 2;
+/**
+ * Fallback viewBox for skeleton / error states, before circuit bounds are
+ * known. Once the circuit loads, `derived.svgW` / `derived.svgH` replace these.
+ */
+const FALLBACK_SVG_WIDTH = TARGET_MAX_INNER_DIM + PADDING * 2;
+const FALLBACK_SVG_HEIGHT = Math.round(FALLBACK_SVG_WIDTH / 1.6);
+const FALLBACK_INNER_WIDTH = FALLBACK_SVG_WIDTH - PADDING * 2;
+const FALLBACK_INNER_HEIGHT = FALLBACK_SVG_HEIGHT - PADDING * 2;
 
 /** Duration of the replay lap-change path animation in milliseconds. */
 const REPLAY_ANIM_MS = 600;
@@ -139,25 +151,27 @@ function FinishLine({
 
   return (
     <g aria-label="Start/finish line">
-      {/* Checkered flag rect — 5 px along track, 20 px across */}
+      {/* Checkered flag rect — 7 px along track, 24 px across (bumped from 5×20
+          for slightly better screenshot legibility). */}
       <rect
-        x={-2.5}
-        y={-10}
-        width={5}
-        height={20}
+        x={-3.5}
+        y={-12}
+        width={7}
+        height={24}
         fill="url(#f1-finish-checker)"
         transform={`translate(${p0.svgX.toFixed(2)},${p0.svgY.toFixed(2)}) rotate(${angleDeg.toFixed(1)})`}
       />
       {/* SF label offset to the outside of the first path point */}
       <text
-        x={p0.svgX + (-dy / len) * 16}
-        y={p0.svgY + (dx / len) * 16}
+        x={p0.svgX + (-dy / len) * 20}
+        y={p0.svgY + (dx / len) * 20}
         textAnchor="middle"
         dominantBaseline="central"
-        fontSize={7}
+        fontSize={9}
         fontFamily="'JetBrains Mono', 'Roboto Mono', monospace"
         fontWeight="700"
-        fill="#666666"
+        fill="#AAAAAA"
+        letterSpacing={1}
         style={{ userSelect: "none" }}
       >
         SF
@@ -172,7 +186,9 @@ function TrackSkeleton() {
   return (
     <svg
       width="100%"
-      viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
+      height="100%"
+      viewBox={`0 0 ${FALLBACK_SVG_WIDTH} ${FALLBACK_SVG_HEIGHT}`}
+      preserveAspectRatio="xMidYMid meet"
       aria-label="Loading circuit…"
       role="img"
       style={{ display: "block" }}
@@ -181,14 +197,20 @@ function TrackSkeleton() {
         ${SVG_KEYFRAMES}
         .f1-skel { animation: f1-skel-pulse 1.6s ease-in-out infinite; }
       `}</style>
-      <rect x={0} y={0} width={SVG_WIDTH} height={SVG_HEIGHT} fill="#0A0A0A" />
+      <rect
+        x={0}
+        y={0}
+        width={FALLBACK_SVG_WIDTH}
+        height={FALLBACK_SVG_HEIGHT}
+        fill="#0A0A0A"
+      />
       <rect
         className="f1-skel"
         x={PADDING}
         y={PADDING}
-        width={INNER_WIDTH}
-        height={INNER_HEIGHT}
-        rx={INNER_HEIGHT / 2}
+        width={FALLBACK_INNER_WIDTH}
+        height={FALLBACK_INNER_HEIGHT}
+        rx={FALLBACK_INNER_HEIGHT / 2}
         fill="none"
         stroke="#2A2A2A"
         strokeWidth={18}
@@ -196,14 +218,14 @@ function TrackSkeleton() {
       <rect
         x={PADDING + 50}
         y={PADDING + 50}
-        width={INNER_WIDTH - 100}
-        height={INNER_HEIGHT - 100}
-        rx={(INNER_HEIGHT - 100) / 2}
+        width={FALLBACK_INNER_WIDTH - 100}
+        height={FALLBACK_INNER_HEIGHT - 100}
+        rx={(FALLBACK_INNER_HEIGHT - 100) / 2}
         fill="#0A0A0A"
       />
       <text
-        x={SVG_WIDTH / 2}
-        y={SVG_HEIGHT / 2}
+        x={FALLBACK_SVG_WIDTH / 2}
+        y={FALLBACK_SVG_HEIGHT / 2}
         textAnchor="middle"
         dominantBaseline="middle"
         fill="#444444"
@@ -223,14 +245,22 @@ function TrackError({ message }: { message: string }) {
   return (
     <svg
       width="100%"
-      viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
+      height="100%"
+      viewBox={`0 0 ${FALLBACK_SVG_WIDTH} ${FALLBACK_SVG_HEIGHT}`}
+      preserveAspectRatio="xMidYMid meet"
       role="alert"
       style={{ display: "block" }}
     >
-      <rect x={0} y={0} width={SVG_WIDTH} height={SVG_HEIGHT} fill="#0A0A0A" />
+      <rect
+        x={0}
+        y={0}
+        width={FALLBACK_SVG_WIDTH}
+        height={FALLBACK_SVG_HEIGHT}
+        fill="#0A0A0A"
+      />
       <text
-        x={SVG_WIDTH / 2}
-        y={SVG_HEIGHT / 2 - 14}
+        x={FALLBACK_SVG_WIDTH / 2}
+        y={FALLBACK_SVG_HEIGHT / 2 - 14}
         textAnchor="middle"
         dominantBaseline="middle"
         fill="#E8002D"
@@ -241,8 +271,8 @@ function TrackError({ message }: { message: string }) {
         CIRCUIT UNAVAILABLE
       </text>
       <text
-        x={SVG_WIDTH / 2}
-        y={SVG_HEIGHT / 2 + 14}
+        x={FALLBACK_SVG_WIDTH / 2}
+        y={FALLBACK_SVG_HEIGHT / 2 + 14}
         textAnchor="middle"
         dominantBaseline="middle"
         fill="#555555"
@@ -299,6 +329,23 @@ export default function TrackMap({
     if (!circuit || circuit.x.length === 0) return null;
 
     const bounds = computeBoundsFromArrays(circuit.x, circuit.y);
+
+    // ── Dynamic viewBox sized to the circuit's natural aspect ratio ─────────
+    // Previously the viewBox was hardcoded to 800×500 (1.6:1) and the circuit
+    // was letterboxed inside a 720×420 inner area, producing dead space top/
+    // bottom on wide circuits (Miami) and dead space sides on tall ones
+    // (Hungaroring). Compute the inner area per-circuit so the path always
+    // fills its bounding box tightly.
+    const circuitW = Math.max(bounds.maxX - bounds.minX, 1);
+    const circuitH = Math.max(bounds.maxY - bounds.minY, 1);
+    const aspect = circuitW / circuitH;
+    const innerW =
+      aspect >= 1 ? TARGET_MAX_INNER_DIM : TARGET_MAX_INNER_DIM * aspect;
+    const innerH =
+      aspect >= 1 ? TARGET_MAX_INNER_DIM / aspect : TARGET_MAX_INNER_DIM;
+    const svgW = innerW + PADDING * 2;
+    const svgH = innerH + PADDING * 2;
+
     const normalizedPath: Array<{ svgX: number; svgY: number }> = [];
     const parts: string[] = [];
 
@@ -310,8 +357,8 @@ export default function TrackMap({
         bounds.maxX,
         bounds.maxY, // swapped — flip Y axis so circuit renders right-side-up
         bounds.minY, // swapped
-        INNER_WIDTH,
-        INNER_HEIGHT,
+        innerW,
+        innerH,
       );
       normalizedPath.push({ svgX, svgY });
       parts.push(
@@ -319,7 +366,15 @@ export default function TrackMap({
       );
     }
 
-    return { bounds, pathPoints: parts.join(" ") + " Z", normalizedPath };
+    return {
+      bounds,
+      pathPoints: parts.join(" ") + " Z",
+      normalizedPath,
+      innerW,
+      innerH,
+      svgW,
+      svgH,
+    };
   }, [circuit]);
 
   // ── Replay path animation state ────────────────────────────────────────────
@@ -352,7 +407,7 @@ export default function TrackMap({
   useEffect(() => {
     if (!derived || Object.keys(locations).length === 0) return;
 
-    const { normalizedPath, bounds } = derived;
+    const { normalizedPath, bounds, innerW, innerH } = derived;
 
     // ── Compute normalised target positions for every driver ─────────────────
     const toNorm: Record<number, NormPos> = {};
@@ -364,8 +419,8 @@ export default function TrackMap({
         bounds.maxX,
         bounds.maxY, // Y-flip matches circuit path
         bounds.minY,
-        INNER_WIDTH,
-        INNER_HEIGHT,
+        innerW,
+        innerH,
       );
       toNorm[loc.driver_number] = {
         svgX,
@@ -502,9 +557,9 @@ export default function TrackMap({
     ];
   });
 
-  // ── Badge geometry ─────────────────────────────────────────────────────────
+  // ── Badge geometry (anchored to dynamic SVG width) ─────────────────────────
 
-  const BADGE_X = SVG_WIDTH - 12;
+  const BADGE_X = derived.svgW - 12;
   const BADGE_Y = 14;
 
   // ── SVG output ─────────────────────────────────────────────────────────────
@@ -512,7 +567,9 @@ export default function TrackMap({
   return (
     <svg
       width="100%"
-      viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
+      height="100%"
+      viewBox={`0 0 ${derived.svgW} ${derived.svgH}`}
+      preserveAspectRatio="xMidYMid meet"
       style={{ display: "block", background: "#0A0A0A" }}
       aria-label="F1 circuit map with live driver positions"
     >
@@ -551,11 +608,12 @@ export default function TrackMap({
           strokeLinecap="round"
           strokeLinejoin="round"
         />
-        {/* Center line — subtle brightening */}
+        {/* Racing line — bumped from #333 → #555 so the circuit reads cleanly
+            against the dark background without stealing focus from dots. */}
         <path
           d={pathPoints}
           fill="none"
-          stroke="#333333"
+          stroke="#555555"
           strokeWidth={2}
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -572,8 +630,8 @@ export default function TrackMap({
       <rect
         x={0}
         y={0}
-        width={SVG_WIDTH}
-        height={SVG_HEIGHT}
+        width={derived.svgW}
+        height={derived.svgH}
         fill="url(#f1-vignette)"
         style={{ pointerEvents: "none" }}
       />
