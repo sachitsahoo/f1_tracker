@@ -7,6 +7,7 @@ import type {
   Stint,
   RaceControl,
   Lap,
+  Weather,
   ApiError,
 } from "../types/f1.ts";
 import { emitApiEvent } from "../utils/apiEvents";
@@ -416,4 +417,22 @@ export async function getLaps(
   if (dateGt !== undefined) params.set("date_gt", toUtcZ(dateGt));
   const res = await fetchWithRetry(`${BASE_URL}/laps?${params.toString()}`);
   return handleResponse<Lap[]>(res, true);
+}
+
+// ─── Weather ─────────────────────────────────────────────────────────────────
+
+/**
+ * Returns weather samples for a session. OpenF1 emits one sample per minute,
+ * so a 2-hour race yields ~120 records — small enough to fetch once and
+ * filter client-side by replay cutoff. Pass `dateGt` for incremental polling
+ * while live.
+ */
+export async function getWeather(
+  sessionKey: number | "latest",
+  dateGt?: string,
+): Promise<Weather[]> {
+  const params = new URLSearchParams({ session_key: String(sessionKey) });
+  if (dateGt !== undefined) params.set("date_gt", toUtcZ(dateGt));
+  const res = await fetchWithRetry(`${BASE_URL}/weather?${params.toString()}`);
+  return handleResponse<Weather[]>(res, true);
 }

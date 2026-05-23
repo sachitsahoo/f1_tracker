@@ -88,6 +88,24 @@ export interface CircuitData {
   marshalLights?: Array<{ trackPosition: { x: number; y: number } }>;
 }
 
+// ─── Weather ─────────────────────────────────────────────────────────────────
+
+/**
+ * Snapshot of trackside weather conditions, sampled at minute-ish intervals
+ * during a session. Fields can be null when a sensor is offline.
+ */
+export interface Weather {
+  date: string; // ISO 8601 timestamp of the sample
+  air_temperature: number | null; // °C
+  track_temperature: number | null; // °C
+  humidity: number | null; // %
+  pressure: number | null; // millibar
+  wind_speed: number | null; // m/s (OpenF1 spec) — convert to km/h for display
+  wind_direction: number | null; // degrees, 0–360
+  rainfall: number | null; // 0 = dry, 1 = raining (binary in OpenF1)
+  session_key: number;
+}
+
 // ─── Race Control (flags, safety car, incidents) ─────────────────────────────
 
 export interface RaceControl {
@@ -334,6 +352,12 @@ export interface StatusBarProps {
    * the fastest-lap holder is visible without scanning the timing tower.
    */
   fastestLap?: { time: number; abbreviation: string } | null;
+  /**
+   * Latest weather sample for the displayed lap (cutoff-aware in replay),
+   * or null while none has been fetched. Drives the small weather pill at
+   * the right end of the bar (air temp + rain icon).
+   */
+  weather?: Weather | null;
 }
 
 /** Props for the lap-based replay scrubber bar. */

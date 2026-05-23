@@ -18,6 +18,7 @@ import { useLocationSnapshot } from "./hooks/useLocationSnapshot";
 import { useStints } from "./hooks/useStints";
 import { useLaps } from "./hooks/useLaps";
 import { useRaceControl } from "./hooks/useRaceControl";
+import { useWeather } from "./hooks/useWeather";
 import StatusBar from "./components/StatusBar";
 import TrackMap from "./components/TrackMap";
 import Leaderboard from "./components/Leaderboard";
@@ -155,6 +156,7 @@ export default function App() {
   const { stints: stintsArray } = useStints(tier2Key, isLive); // Tier 2 — +400ms
   const { laps, totalLaps } = useLaps(tier3Key); // Tier 3 — +800ms
   const { messages } = useRaceControl(tier3Key, isLive); // Tier 3 — +800ms
+  const { samples: weatherSamples } = useWeather(tier3Key, isLive); // Tier 3
 
   // ── 3. Replay scrubber state ───────────────────────────────────────────────
 
@@ -250,6 +252,20 @@ export default function App() {
   // best may have been set on a lap whose lap_duration is not the session
   // fastest. Outlaps are excluded but lap 1 is allowed — a sector can be
   // clean even on the standing-start lap (S2/S3 on most circuits).
+  // Displayed weather sample: latest sample whose timestamp is at or before
+  // the replay cutoff. When live, that's just the most recent sample.
+  const displayWeather = useMemo(() => {
+    if (weatherSamples.length === 0) return null;
+    if (replayCutoff === null) return weatherSamples[weatherSamples.length - 1];
+    let best: (typeof weatherSamples)[number] | null = null;
+    for (const s of weatherSamples) {
+      if (s.date <= replayCutoff && (best === null || s.date > best.date)) {
+        best = s;
+      }
+    }
+    return best ?? weatherSamples[0];
+  }, [weatherSamples, replayCutoff]);
+
   const sessionBestSectors = useMemo<{
     overall: [number | null, number | null, number | null];
     personal: Record<number, [number | null, number | null, number | null]>;
@@ -558,6 +574,7 @@ export default function App() {
               }
             : null
         }
+        weather={displayWeather}
       />
 
       {/* ── Two-panel body ─────────────────────────────────────────────────── */}

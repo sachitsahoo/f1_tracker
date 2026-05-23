@@ -1,6 +1,6 @@
 import React from "react";
 
-import type { RaceControl, StatusBarProps } from "../types/f1";
+import type { RaceControl, StatusBarProps, Weather } from "../types/f1";
 import SessionPicker from "./SessionPicker";
 
 // ─── Track-status colour palette ─────────────────────────────────────────────
@@ -109,6 +109,14 @@ function formatLapTime(seconds: number): string {
   return `${mins}:${secs.toFixed(3).padStart(6, "0")}`;
 }
 
+/** Compose the icon + label for the weather pill from a Weather sample. */
+function weatherIcon(w: Weather): string {
+  // OpenF1 `rainfall` is binary (0 dry / 1 raining); use it as the primary signal.
+  if (w.rainfall != null && w.rainfall > 0) return "🌧";
+  if (w.humidity != null && w.humidity >= 80) return "☁";
+  return "☀";
+}
+
 export default function StatusBar({
   session,
   currentLap,
@@ -118,6 +126,7 @@ export default function StatusBar({
   sessions,
   onSessionChange,
   fastestLap,
+  weather,
 }: StatusBarProps) {
   // Most recent message (messages are appended chronologically by App)
   const latestMessage: RaceControl | null =
@@ -228,6 +237,22 @@ export default function StatusBar({
         </div>
       ) : (
         <div style={styles.spacer} />
+      )}
+
+      {/* ── Weather pill — air temp + sky icon. Hidden until samples load. */}
+      {weather && weather.air_temperature != null && (
+        <div
+          style={styles.weatherPill}
+          aria-label={`Weather: ${weather.air_temperature}°C${weather.rainfall != null && weather.rainfall > 0 ? ", raining" : ""}`}
+          title={`Track ${weather.track_temperature ?? "—"}°C · ${weather.humidity ?? "—"}% humidity · wind ${weather.wind_speed ?? "—"} m/s`}
+        >
+          <span style={styles.weatherIcon} aria-hidden="true">
+            {weatherIcon(weather)}
+          </span>
+          <span style={styles.weatherTemp}>
+            {Math.round(weather.air_temperature)}°C
+          </span>
+        </div>
       )}
 
       {/* ── Track status badge ────────────────────────────────────────────── */}
@@ -389,6 +414,30 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     color: "#AAAAAA",
     letterSpacing: "0.1em",
+  },
+
+  // ── Weather pill — small capsule with sky icon + air temperature
+  weatherPill: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "4px 10px",
+    border: "1px solid #2A2A2A",
+    backgroundColor: "rgba(255,255,255,0.03)",
+    flexShrink: 0,
+    whiteSpace: "nowrap",
+  },
+  weatherIcon: {
+    fontSize: "13px",
+    lineHeight: 1,
+  },
+  weatherTemp: {
+    fontFamily: "'Roboto Mono', 'Courier New', monospace",
+    fontSize: "12px",
+    fontWeight: 700,
+    color: "#DDDDDD",
+    fontVariantNumeric: "tabular-nums",
+    letterSpacing: "0.04em",
   },
 
   // ── Track status badge (SC / VSC / RED FLAG / TRACK CLEAR)
