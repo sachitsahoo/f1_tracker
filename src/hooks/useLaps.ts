@@ -1,9 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { getLaps } from "../api/openf1";
+import { hasAuthKey } from "../api/auth";
+import { subscribeTopic } from "../api/mqtt";
 import type { Lap, ApiError } from "../types/f1";
 import { useInterval } from "./useInterval";
 
 const POLL_INTERVAL_MS = 30_000;
+const LAPS_TOPIC = "v1/laps";
+
+interface LapMessage extends Lap {
+  _id?: number;
+  _key?: string;
+}
 
 export interface UseLapsResult {
   laps: Lap[];
@@ -58,11 +66,56 @@ export function useLaps(
     fetchLaps();
   }, [sessionKey, fetchLaps]);
 
-  // Live polling — skipped automatically when isLive is false.
+  // REST polling — gated off when MQTT is available. Sponsor-tier users
+  // get new laps via subscribeTopic below.
   useInterval(
     fetchLaps,
-    isLive && sessionKey !== null ? POLL_INTERVAL_MS : null,
+    isLive && sessionKey !== null && !hasAuthKey ? POLL_INTERVAL_MS : null,
   );
+
+  // ── MQTT live stream ─────────────────────────────────────────────────────
+  // OpenF1 publishes one message per completed lap. Dedupe by
+  // (driver_number, lap_number) and replace-in-place so a corrected lap
+  // (e.g. sector times updated after the lap closes) is reflected.
+  useEffect(() => {
+    if (!hasAuthKey || sessionKey === null || !isLive) return;
+    const unsubscribe = subscribeTopic<LapMessage>(LAPS_TOPIC, (msg) => {
+      if (msg.session_key !== sessionKey) return;
+      const lap: Lap = {
+        date_start: msg.date_start,
+        driver_number: msg.driver_number,
+        duration_sector_1: msg.duration_sector_1,
+        duration_sector_2: msg.duration_sector_2,
+        duration_sector_3: msg.duration_sector_3,
+        i1_speed: msg.i1_speed,
+        i2_speed: msg.i2_speed,
+        is_pit_out_lap: msg.is_pit_out_lap,
+        lap_duration: msg.lap_duration,
+        lap_number: msg.lap_number,
+        segments_sector_1: msg.segments_sector_1,
+        segments_sector_2: msg.segments_sector_2,
+        segments_sector_3: msg.segments_sector_3,
+        st_speed: msg.st_speed,
+        session_key: msg.session_key,
+      };
+      setLaps((prev) => {
+        const idx = prev.findIndex(
+          (l) =>
+            l.driver_number === lap.driver_number &&
+            l.lap_number === lap.lap_number,
+        );
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = lap;
+          return next;
+        }
+        return [...prev, lap];
+      });
+      setLoading(false);
+      setError(null);
+    });
+    return unsubscribe;
+  }, [sessionKey, isLive]);
 
   const totalLaps =
     laps.length > 0 ? Math.max(...laps.map((l) => l.lap_number)) : null;

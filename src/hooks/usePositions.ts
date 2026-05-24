@@ -1,9 +1,22 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { getBackendPositions, getBackendIntervals } from "../api/backend";
+import { hasAuthKey } from "../api/auth";
+import { subscribeTopic } from "../api/mqtt";
 import type { Position, Interval, ApiError } from "../types/f1";
 import { useInterval } from "./useInterval";
 
 const POLL_INTERVAL_MS = 4_000;
+const POSITION_TOPIC = "v1/position";
+const INTERVAL_TOPIC = "v1/intervals";
+
+interface PositionMessage extends Position {
+  _id?: number;
+  _key?: string;
+}
+interface IntervalMessage extends Interval {
+  _id?: number;
+  _key?: string;
+}
 
 export interface UsePositionsResult {
   positions: Record<number, Position>;
@@ -137,8 +150,78 @@ export function usePositions(
     void poll();
   }, [sessionKey, poll]);
 
-  // Ongoing polling — only while the session is live.
-  useInterval(poll, isLive && sessionKey !== null ? POLL_INTERVAL_MS : null);
+  // REST polling — gated off when MQTT is available. The Supabase-backed
+  // /api/positions endpoint is empty for sessions not yet seeded, so for
+  // live races MQTT is the only working source.
+  useInterval(
+    poll,
+    isLive && sessionKey !== null && !hasAuthKey ? POLL_INTERVAL_MS : null,
+  );
+
+  // ── MQTT live stream — position and intervals topics ─────────────────────
+  useEffect(() => {
+    if (!hasAuthKey || sessionKey === null || !isLive) return;
+
+    const unsubPosition = subscribeTopic<PositionMessage>(
+      POSITION_TOPIC,
+      (msg) => {
+        if (msg.session_key !== sessionKey) return;
+        if (driverNumber !== undefined && msg.driver_number !== driverNumber)
+          return;
+        const pos: Position = {
+          driver_number: msg.driver_number,
+          date: msg.date,
+          position: msg.position,
+          session_key: msg.session_key,
+        };
+        if (
+          !positionCursorRef.current ||
+          pos.date > positionCursorRef.current
+        ) {
+          positionCursorRef.current = pos.date;
+        }
+        setPositions((prev) => {
+          const existing = prev[pos.driver_number];
+          if (existing && pos.date <= existing.date) return prev;
+          return { ...prev, [pos.driver_number]: pos };
+        });
+        setLoading(false);
+        setError(null);
+      },
+    );
+
+    const unsubInterval = subscribeTopic<IntervalMessage>(
+      INTERVAL_TOPIC,
+      (msg) => {
+        if (msg.session_key !== sessionKey) return;
+        if (driverNumber !== undefined && msg.driver_number !== driverNumber)
+          return;
+        const itv: Interval = {
+          driver_number: msg.driver_number,
+          date: msg.date,
+          gap_to_leader: msg.gap_to_leader,
+          interval: msg.interval,
+          session_key: msg.session_key,
+        };
+        if (
+          !intervalCursorRef.current ||
+          itv.date > intervalCursorRef.current
+        ) {
+          intervalCursorRef.current = itv.date;
+        }
+        setIntervals((prev) => {
+          const existing = prev[itv.driver_number];
+          if (existing && itv.date <= existing.date) return prev;
+          return { ...prev, [itv.driver_number]: itv };
+        });
+      },
+    );
+
+    return () => {
+      unsubPosition();
+      unsubInterval();
+    };
+  }, [sessionKey, isLive, driverNumber]);
 
   return { positions, intervals, allPositions, allIntervals, loading, error };
 }

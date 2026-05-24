@@ -1,9 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { getBackendStints } from "../api/openf1";
+import { hasAuthKey } from "../api/auth";
+import { subscribeTopic } from "../api/mqtt";
 import type { Stint, ApiError } from "../types/f1";
 import { useInterval } from "./useInterval";
 
 const POLL_INTERVAL_MS = 30_000;
+const STINTS_TOPIC = "v1/stints";
+
+interface StintMessage extends Stint {
+  _id?: number;
+  _key?: string;
+}
 
 export interface UseStintsResult {
   stints: Stint[];
@@ -58,8 +66,48 @@ export function useStints(
     void poll();
   }, [sessionKey, poll]);
 
-  // Ongoing polling — only while the session is live.
-  useInterval(poll, isLive && sessionKey !== null ? POLL_INTERVAL_MS : null);
+  // REST polling — gated off when MQTT is available.
+  useInterval(
+    poll,
+    isLive && sessionKey !== null && !hasAuthKey ? POLL_INTERVAL_MS : null,
+  );
+
+  // ── MQTT live stream ─────────────────────────────────────────────────────
+  // OpenF1 publishes a stint record per driver per pit stop. Dedupe by
+  // (driver_number, lap_start) and replace in place so lap_end updates as
+  // the stint progresses.
+  useEffect(() => {
+    if (!hasAuthKey || sessionKey === null || !isLive) return;
+    const unsubscribe = subscribeTopic<StintMessage>(STINTS_TOPIC, (msg) => {
+      if (msg.session_key !== sessionKey) return;
+      if (driverNumber !== undefined && msg.driver_number !== driverNumber)
+        return;
+      const stint: Stint = {
+        driver_number: msg.driver_number,
+        lap_start: msg.lap_start,
+        lap_end: msg.lap_end,
+        compound: msg.compound,
+        tyre_age_at_start: msg.tyre_age_at_start,
+        session_key: msg.session_key,
+      };
+      setStints((prev) => {
+        const idx = prev.findIndex(
+          (s) =>
+            s.driver_number === stint.driver_number &&
+            s.lap_start === stint.lap_start,
+        );
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = stint;
+          return next;
+        }
+        return [...prev, stint];
+      });
+      setLoading(false);
+      setError(null);
+    });
+    return unsubscribe;
+  }, [sessionKey, isLive, driverNumber]);
 
   return { stints, loading, error };
 }

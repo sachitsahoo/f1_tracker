@@ -1,15 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import mqtt from "mqtt";
 import type { Location, ApiError } from "../types/f1";
 import type { UseLocationsResult } from "./useLocations";
-import { getMqttCredentials, hasAuthKey } from "../api/auth";
+import { hasAuthKey } from "../api/auth";
 import { getLocations } from "../api/openf1";
-import { emitApiEvent } from "../utils/apiEvents";
+import { subscribeTopic, isMqttConnected } from "../api/mqtt";
 import { useInterval } from "./useInterval";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MQTT_BROKER_URL = "wss://mqtt.openf1.org:8084/mqtt";
 const LOCATION_TOPIC = "v1/location";
 const REST_POLL_MS = 1_000;
 
@@ -127,82 +125,42 @@ export function useLocationStream(
 
   // ══════════════════════════════════════════════════════════════════════════
   // Path B — MQTT stream (authenticated tier only, layered on top of REST)
-  // Delivers live updates with lower latency than the 1 s REST poll.
+  // The only working live source for /location in 2026 — REST returns empty
+  // arrays during live sessions. Subscribes through the shared mqtt module
+  // so we don't open a separate WebSocket per hook.
   // ══════════════════════════════════════════════════════════════════════════
 
   useEffect(() => {
     if (!hasAuthKey || sessionKey === null) return;
 
-    let cancelled = false;
-    let client: mqtt.MqttClient | undefined;
+    const unsubscribe = subscribeTopic<LocationMessage>(
+      LOCATION_TOPIC,
+      (msg) => {
+        if (msg.session_key !== sessionKey) return;
 
-    async function connect() {
-      const creds = await getMqttCredentials();
-      if (!creds || cancelled) return;
+        const loc: Location = {
+          driver_number: msg.driver_number,
+          date: msg.date,
+          x: msg.x,
+          y: msg.y,
+          z: msg.z,
+          session_key: msg.session_key,
+        };
 
-      client = mqtt.connect(MQTT_BROKER_URL, {
-        username: creds.username,
-        password: creds.password,
-        reconnectPeriod: 5_000,
-        connectTimeout: 10_000,
-      });
-
-      client.on("connect", () => {
-        mqttLiveRef.current = true;
-        emitApiEvent("success", "");
-
-        client!.subscribe(LOCATION_TOPIC, (err) => {
-          if (err) {
-            emitApiEvent(
-              "network-error",
-              `MQTT subscribe error: ${err.message}`,
-            );
-          }
-        });
-      });
-
-      client.on("message", (_topic: string, payload: Buffer) => {
-        try {
-          const msg = JSON.parse(payload.toString()) as LocationMessage;
-          if (msg.session_key !== sessionKey) return;
-
-          const loc: Location = {
-            driver_number: msg.driver_number,
-            date: msg.date,
-            x: msg.x,
-            y: msg.y,
-            z: msg.z,
-            session_key: msg.session_key,
-          };
-
-          // Advance the REST cursor so polling skips data already received here.
-          if (!cursorRef.current || loc.date > cursorRef.current) {
-            cursorRef.current = loc.date;
-          }
-
-          mergeLocation(loc);
-        } catch {
-          // Malformed JSON — skip
+        // Advance the REST cursor so any concurrent poll skips data already
+        // received here. mqttLiveRef tracks broker-connected state so REST
+        // polling stands down once MQTT is delivering.
+        mqttLiveRef.current = isMqttConnected();
+        if (!cursorRef.current || loc.date > cursorRef.current) {
+          cursorRef.current = loc.date;
         }
-      });
-
-      client.on("error", (err: Error) => {
-        mqttLiveRef.current = false;
-        emitApiEvent("network-error", `MQTT error: ${err.message}`);
-      });
-
-      client.on("offline", () => {
-        mqttLiveRef.current = false;
-        emitApiEvent("network-error", "MQTT offline — REST polling will cover");
-      });
-    }
-
-    void connect();
+        mergeLocation(loc);
+      },
+    );
 
     return () => {
-      cancelled = true;
+      unsubscribe();
       mqttLiveRef.current = false;
-      client?.end(true);
     };
   }, [sessionKey, mergeLocation]);
 
