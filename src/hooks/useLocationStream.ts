@@ -82,7 +82,18 @@ export function useLocationStream(
         batch.forEach(mergeLocation);
       }
     } catch (err) {
-      setError(err as ApiError);
+      const apiErr = err as ApiError;
+      // OpenF1 sometimes returns 422 on /location when the cached cursor
+      // is unacceptable (stale date_gt, or in a format the incremental
+      // endpoint can't parse for this session). Drop the cursor so the
+      // next poll fires fresh (no date_gt) and self-heals. We don't retry
+      // synchronously here — the useInterval tick handles the next attempt
+      // in ~1 s, which also prevents a tight loop if the no-cursor call
+      // also 422s for a deeper reason (e.g. session has no location data).
+      if (apiErr?.status === 422 && cursorRef.current !== undefined) {
+        cursorRef.current = undefined;
+      }
+      setError(apiErr);
     } finally {
       setLoading(false);
     }
