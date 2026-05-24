@@ -64,14 +64,25 @@ export function useLocationStream(
   // True while an MQTT connection is established — REST polling backs off.
   const mqttLiveRef = useRef(false);
 
+  // Returns an ISO timestamp 5 s in the past. Used as the cold-start cursor
+  // and as the 422-recovery cursor so we never ask OpenF1 for an unbounded
+  // amount of /location data. Mid-race the full session can be megabytes;
+  // OpenF1 explicitly rejects those requests with 422 "too much data at once."
+  const recentCursor = (): string => new Date(Date.now() - 5_000).toISOString();
+
   const poll = useCallback(async (): Promise<void> => {
     if (sessionKey === null) return;
 
-    if (cursorRef.current === undefined) setLoading(true);
+    // Always send a bounded date_gt. Cold start and 422 recovery both
+    // fall through to recentCursor() instead of an unbounded fetch.
+    const dateGt = cursorRef.current ?? recentCursor();
+    const isColdStart = cursorRef.current === undefined;
+
+    if (isColdStart) setLoading(true);
     setError(null);
 
     try {
-      const batch = await getLocations(sessionKey, cursorRef.current);
+      const batch = await getLocations(sessionKey, dateGt);
 
       if (batch.length > 0) {
         const latestDate = batch.reduce(
@@ -80,17 +91,16 @@ export function useLocationStream(
         );
         cursorRef.current = latestDate;
         batch.forEach(mergeLocation);
+      } else {
+        // Empty batch — advance cursor past the window we just polled
+        // so we don't re-fetch the same 5 s of nothing every tick.
+        cursorRef.current = dateGt;
       }
     } catch (err) {
       const apiErr = err as ApiError;
-      // OpenF1 sometimes returns 422 on /location when the cached cursor
-      // is unacceptable (stale date_gt, or in a format the incremental
-      // endpoint can't parse for this session). Drop the cursor so the
-      // next poll fires fresh (no date_gt) and self-heals. We don't retry
-      // synchronously here — the useInterval tick handles the next attempt
-      // in ~1 s, which also prevents a tight loop if the no-cursor call
-      // also 422s for a deeper reason (e.g. session has no location data).
-      if (apiErr?.status === 422 && cursorRef.current !== undefined) {
+      // 422 = "too much data at once". Clear cursor; next poll falls
+      // through to recentCursor() so the request stays bounded.
+      if (apiErr?.status === 422) {
         cursorRef.current = undefined;
       }
       setError(apiErr);
